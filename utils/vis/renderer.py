@@ -1,5 +1,6 @@
 import cv2
 import neural_renderer as nr
+import open3d as o3d
 import numpy as np
 import torch
 
@@ -126,8 +127,16 @@ class MeshRenderer(object):
         for i in range(batch_size):
             image = batch_input["images_orig"][i].cpu().numpy()
             gt_points = batch_input["points"][i].cpu().numpy() + mesh_pos
+            write_point_cloud(gt_points, '/tmp/{}_gt.ply'.format(i))
             for j in range(3):
                 for k in (["pred_coord_before_deform", "pred_coord"] if j == 0 else ["pred_coord"]):
                     coord = batch_output[k][j][i].cpu().numpy() + mesh_pos
                     images_stack.append(self.visualize_reconstruction(gt_points, coord, faces[j].cpu().numpy(), image))
+                    write_point_cloud(coord, '/tmp/{}_{}_{}.ply'.format(i, j, k))
+
         return torch.from_numpy(np.concatenate(images_stack, 1))
+
+def write_point_cloud(coord, filename):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(coord)
+    o3d.io.write_point_cloud(filename, pcd)
