@@ -1,3 +1,6 @@
 [submodule "external/neural_renderer"]
 	path = external/neural_renderer
 	url = https://github.com/daniilidis-group/neural_renderer
+[submodule "utils/mesh_decimation/vcglib"]
+	path = utils/mesh_decimation/vcglib
+	url = https://github.com/rakeshshrestha31/vcglib.git
