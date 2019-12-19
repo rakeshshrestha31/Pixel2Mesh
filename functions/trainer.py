@@ -13,6 +13,7 @@ from models.losses.p2m import P2MLoss
 from models.p2m import P2MModel
 from utils.average_meter import AverageMeter
 from utils.mesh import Ellipsoid
+from utils.misc import *
 from utils.tensor import recursive_detach
 from utils.vis.renderer import MeshRenderer
 
@@ -88,12 +89,13 @@ class Trainer(CheckpointRunner):
 
     def train_step(self, input_batch):
         self.model.train()
-
+        input_batch = tocuda(input_batch)
         # Grab data from the batch
         images = input_batch["images"]
+        proj_matrices = input_batch["proj_matrices"]
 
         # predict with model
-        out = self.model(images)
+        out = self.model(images, proj_matrices)
 
         # compute loss
         loss, loss_summary = self.criterion(out, input_batch)
@@ -109,6 +111,7 @@ class Trainer(CheckpointRunner):
 
     def train(self):
         # Run training for num_epochs epochs
+
         for epoch in range(self.epoch_count, self.options.train.num_epochs):
             self.epoch_count += 1
 
@@ -123,9 +126,12 @@ class Trainer(CheckpointRunner):
             # Reset loss
             self.losses.reset()
 
+            # self.test()
+
             # Iterate over all batches in an epoch
             for step, batch in enumerate(train_data_loader):
                 # Send input to GPU
+                # start_time = time.time()
                 batch = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
                 # Run training step
@@ -140,9 +146,11 @@ class Trainer(CheckpointRunner):
                 # Save checkpoint every checkpoint_steps steps
                 if self.step_count % self.options.train.checkpoint_steps == 0:
                     self.dump_checkpoint()
+                # duration = time.time() - start_time
+                # print("step %d, duration is %f"%(step, duration))
 
             # save checkpoint after each epoch
-            self.dump_checkpoint()
+            # self.dump_checkpoint()
 
             # Run validation every test_epochs
             if self.epoch_count % self.options.train.test_epochs == 0:

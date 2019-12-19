@@ -89,13 +89,17 @@ class P2MLoss(nn.Module):
         gt_coord, gt_normal, gt_images = targets["points"], targets["normals"], targets["images"]
         pred_coord, pred_coord_before_deform = outputs["pred_coord"], outputs["pred_coord_before_deform"]
         image_loss = 0.
+
+        # TODO uncommit this line
         if outputs["reconst"] is not None and self.options.weights.reconst != 0:
             image_loss = self.image_loss(gt_images, outputs["reconst"])
+
 
         for i in range(3):
             dist1, dist2, idx1, idx2 = self.chamfer_dist(gt_coord, pred_coord[i])
             chamfer_loss += self.options.weights.chamfer[i] * (torch.mean(dist1) +
                                                                self.options.weights.chamfer_opposite * torch.mean(dist2))
+            # normal_loss = 0
             normal_loss += self.normal_loss(gt_normal, idx2, pred_coord[i], self.edges[i])
             edge_loss += self.edge_regularization(pred_coord[i], self.edges[i])
             lap, move = self.laplace_regularization(pred_coord_before_deform[i],
@@ -108,6 +112,12 @@ class P2MLoss(nn.Module):
                self.options.weights.move * move_loss + \
                self.options.weights.edge * edge_loss + \
                self.options.weights.normal * normal_loss
+
+        # loss = self.options.weights.reconst + \
+        #        self.options.weights.laplace * lap_loss + \
+        #        self.options.weights.move * move_loss + \
+        #        self.options.weights.edge * edge_loss + \
+        #        self.options.weights.normal * normal_loss
 
         loss = loss * self.options.weights.constant
 

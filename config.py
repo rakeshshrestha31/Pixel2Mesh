@@ -1,7 +1,8 @@
 import os
 
 # dataset root
-DATASET_ROOT = "datasets/data"
+
+DATASET_ROOT = "./datasets/data"
 SHAPENET_ROOT = os.path.join(DATASET_ROOT, "shapenet")
 IMAGENET_ROOT = os.path.join(DATASET_ROOT, "imagenet")
 

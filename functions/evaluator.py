@@ -100,12 +100,15 @@ class Evaluator(CheckpointRunner):
         with torch.no_grad():
             # Get ground truth
             images = input_batch['images']
+            proj_matrices = input_batch["proj_matrices"]
 
-            out = self.model(images)
+            # predict with model
+            out = self.model(images, proj_matrices)
 
             if self.options.model.name == "pixel2mesh":
                 pred_vertices = out["pred_coord"][-1]
                 gt_points = input_batch["points_orig"]
+                # gt_points = input_batch["points"]
                 if isinstance(gt_points, list):
                     gt_points = [pts.cuda() for pts in gt_points]
                 self.evaluate_chamfer_and_f1(pred_vertices, gt_points, input_batch["labels"])

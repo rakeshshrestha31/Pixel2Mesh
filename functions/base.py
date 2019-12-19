@@ -10,6 +10,7 @@ from torch.utils.data.dataloader import default_collate
 
 import config
 from datasets.imagenet import ImageNet
+from datasets.dtu import MVSDataset
 from datasets.shapenet import ShapeNet, get_shapenet_collate, ShapeNetImageFolder
 from functions.saver import CheckpointSaver
 
@@ -69,10 +70,13 @@ class CheckpointRunner(object):
             return ShapeNetImageFolder(dataset.predict.folder, dataset.normalization, dataset.shapenet)
         elif dataset.name == "imagenet":
             return ImageNet(config.IMAGENET_ROOT, "train" if training else "val")
+        if dataset.name == "dtu":
+            return MVSDataset(config.SHAPENET_ROOT+'/data_tf', dataset.train_list if training else dataset.test_list, "train" if training else "val", dataset.num_views, dataset.normalization, debug_scan2=dataset.debug_scan2)
+
         raise NotImplementedError("Unsupported dataset")
 
     def load_collate_fn(self, dataset, training):
-        if dataset.name == "shapenet":
+        if dataset.name == "shapenet" or dataset.name == "dtu":
             return get_shapenet_collate(dataset.shapenet.num_points)
         else:
             return default_collate

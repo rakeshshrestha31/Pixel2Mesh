@@ -1,8 +1,10 @@
 import argparse
 import sys
 
+import open3d as o3d
 from functions.trainer import Trainer
 from options import update_options, options, reset_options
+
 
 
 def parse_args():
@@ -20,7 +22,11 @@ def parse_args():
     parser.add_argument('--checkpoint', help='checkpoint file', type=str)
     parser.add_argument('--num-epochs', help='number of epochs', type=int)
     parser.add_argument('--version', help='version of task (timestamp by default)', type=str)
-    parser.add_argument('--name', required=True, type=str)
+    parser.add_argument('--name', default='debug', type=str)
+    parser.add_argument('--dataset', default='dtu', type=str)
+    parser.add_argument('--backbone', default='vgg16', type=str)
+    parser.add_argument('--debug_scan2', default=True, type=bool)
+    parser.add_argument('--num_views', default=3, help='num_views', type=int)
 
     args = parser.parse_args()
 

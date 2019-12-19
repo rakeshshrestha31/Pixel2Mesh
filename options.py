@@ -26,27 +26,34 @@ options.checkpoint = None
 
 options.dataset = edict()
 options.dataset.name = "shapenet"
-options.dataset.subset_train = "train_small"
-options.dataset.subset_eval = "test_small"
-options.dataset.camera_f = [248., 248.]
-options.dataset.camera_c = [111.5, 111.5]
+options.dataset.subset_train = "train_tf"
+options.dataset.subset_eval = "test_tf"
+options.dataset.camera_f_base = [361.54125, 360.3975]
+options.dataset.camera_c_base = [82.900625 , 66.383875 ]
+
+options.dataset.camera_f = [506.360294118, 631.169001751]
+options.dataset.camera_c = [116.107317927,116.258975482]
 options.dataset.mesh_pos = [0., 0., -0.8]
 options.dataset.normalization = True
 options.dataset.num_classes = 13
+options.dataset.num_views = 1
+options.dataset.proj_matrix = None
+options.dataset.debug_scan2 = False
 
 options.dataset.shapenet = edict()
 options.dataset.shapenet.num_points = 3000
 options.dataset.shapenet.resize_with_constant_border = False
 
 options.dataset.predict = edict()
-options.dataset.predict.folder = "/tmp"
+options.dataset.predict.folder = "./tmp"
 
 options.model = edict()
 options.model.name = "pixel2mesh"
 options.model.hidden_dim = 192
 options.model.last_hidden_dim = 192
 options.model.coord_dim = 3
-options.model.backbone = "vgg16"
+# options.model.backbone = "vgg16"
+options.model.backbone = "encoder8"
 options.model.gconv_activation = True
 # provide a boundary for z, so that z will never be equal to 0, on denominator
 # if z is greater than 0, it will never be less than z;
@@ -68,18 +75,18 @@ options.loss.weights.chamfer_opposite = 1.
 options.loss.weights.reconst = 0.
 
 options.train = edict()
-options.train.num_epochs = 50
-options.train.batch_size = 4
-options.train.summary_steps = 50
-options.train.checkpoint_steps = 10000
-options.train.test_epochs = 1
+options.train.num_epochs = 200
+options.train.batch_size = 16
+options.train.summary_steps = 10
+options.train.checkpoint_steps = 100000
+options.train.test_epochs = 5
 options.train.use_augmentation = True
 options.train.shuffle = True
 
 options.test = edict()
 options.test.dataset = []
-options.test.summary_steps = 50
-options.test.batch_size = 4
+options.test.summary_steps = 20
+options.test.batch_size = 32
 options.test.shuffle = False
 options.test.weighted_mean = False
 
@@ -91,7 +98,6 @@ options.optim.lr = 5.0E-5
 options.optim.wd = 1.0E-6
 options.optim.lr_step = [30, 45]
 options.optim.lr_factor = 0.1
-
 
 def _update_dict(full_key, val, d):
     for vk, vv in val.items():
@@ -162,6 +168,19 @@ def reset_options(options, args, phase='train'):
         options.num_gpus = args.gpus
     if hasattr(args, "shuffle") and args.shuffle:
         options.train.shuffle = options.test.shuffle = True
+    if hasattr(args, "backbone") and args.backbone:
+        options.model.backbone = args.backbone
+    if hasattr(args, "num_views") and args.num_views:
+        options.dataset.num_views = args.num_views
+    if hasattr(args, "dataset") and args.dataset:
+        options.dataset.name = args.dataset
+        options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu.txt"
+        options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu.txt"
+        options.dataset.debug_scan2 = args.debug_scan2
+        # options.dataset.proj_matrix =
+        if options.dataset.debug_scan2:
+            options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"
+            options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu_scan4.txt"
 
     options.name = args.name
 

@@ -115,7 +115,8 @@ class MeshRenderer(object):
                                            camera_k, dist_coeffs, rvec, tvec, **kwargs)
         pred_pc, _ = self._render_pointcloud(coord, image.shape[2], image.shape[1],
                                              camera_k, dist_coeffs, rvec, tvec, **kwargs)
-        return np.concatenate((image, gt_pc, pred_pc, mesh), 2)
+        return np.concatenate((image, gt_pc, pred_pc), 2)
+        # return np.concatenate((image, gt_pc, pred_pc, mesh), 2)
 
     def p2m_batch_visualize(self, batch_input, batch_output, faces, atmost=3):
         """
@@ -127,6 +128,8 @@ class MeshRenderer(object):
         for i in range(batch_size):
             image = batch_input["images_orig"][i].cpu().numpy()
             gt_points = batch_input["points"][i].cpu().numpy() + mesh_pos
+            if len(image.shape) > 3:
+                image = image[0, :]
             write_point_cloud(gt_points, '/tmp/{}_gt.ply'.format(i))
             for j in range(3):
                 for k in (["pred_coord_before_deform", "pred_coord"] if j == 0 else ["pred_coord"]):

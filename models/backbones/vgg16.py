@@ -108,7 +108,7 @@ class VGG16P2M(nn.Module):
             state_dict = torch.load(config.PRETRAINED_WEIGHTS_PATH["vgg16p2m"])
             self.load_state_dict(state_dict)
         else:
-            self._initialize_weights()
+            self._initialize_weights()  # not load the pre-trained model
 
     def _initialize_weights(self):
         for m in self.modules():
