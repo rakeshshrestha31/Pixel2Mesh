@@ -87,19 +87,30 @@ class P2MModel(nn.Module):
         x3s = []
         x1_ups = []
         x2_ups = []
-        # TODO: handle batch size > 1
+
+        def batch_from_list(lst, batch_idx):
+            return [i[batch_idx:batch_idx+1] for i in lst]
+
+        def batch_from_tensor(tensor, batch_idx):
+            return tensor[batch_idx:batch_idx+1]
+
         # the ref_feature (and others) are list of feature tensors
         # with each element's first dimension being batch size
         for batch_idx in range(batch_size):
             x = self.projection(
-                img_shape, ref_feature, init_pts[batch_idx]
+                img_shape,
+                batch_from_list(ref_feature, batch_idx),
+                init_pts[batch_idx]
             )
             for src_feature, src_proj in zip(src_feature_list, src_proj_list):
                 init_pts_src = self.src2ref(
-                    init_pts[batch_idx], ref_proj, src_proj
+                    init_pts[batch_idx],
+                    batch_from_tensor(ref_proj, batch_idx),
+                    batch_from_tensor(src_proj, batch_idx)
                 )
                 x_src = self.projection(
-                    img_shape, src_feature, init_pts_src
+                    img_shape,
+                    batch_from_list(src_feature, batch_idx), init_pts_src
                 )
                 x += x_src
             x = x / num_views
@@ -111,11 +122,19 @@ class P2MModel(nn.Module):
             x1_up = self.unpooling[0](x1, ellipsoids[batch_idx].unpool_idx[0])
 
             # GCN Block 2
-            x = self.projection(img_shape, ref_feature, x1)
+            x = self.projection(img_shape,
+                                batch_from_list(ref_feature, batch_idx), x1)
 
             for src_feature, src_proj in zip(src_feature_list, src_proj_list):
-                x1_src = self.src2ref(x1, ref_proj, src_proj)
-                x_src = self.projection(img_shape, src_feature, x1_src)
+                x1_src = self.src2ref(
+                    x1,
+                    batch_from_tensor(ref_proj, batch_idx),
+                    batch_from_tensor(src_proj, batch_idx)
+                )
+                x_src = self.projection(
+                    img_shape,
+                    batch_from_list(src_feature, batch_idx), x1_src
+                )
                 x += x_src
             x = x / num_views
             x = self.unpooling[0](
@@ -131,11 +150,19 @@ class P2MModel(nn.Module):
 
             # GCN Block 3
             # x2 shape is torch.Size([16, 618, 3])
-            x = self.projection(img_shape, ref_feature, x2)
+            x = self.projection(
+                img_shape, batch_from_list(ref_feature, batch_idx), x2
+            )
 
             for src_feature, src_proj in zip(src_feature_list, src_proj_list):
-                x2_src = self.src2ref(x2, ref_proj, src_proj)
-                x_src = self.projection(img_shape, src_feature, x2_src)
+                x2_src = self.src2ref(
+                    x2,
+                    batch_from_tensor(ref_proj, batch_idx),
+                    batch_from_tensor(src_proj, batch_idx)
+                )
+                x_src = self.projection(
+                    img_shape, batch_from_list(src_feature, batch_idx), x2_src
+                )
                 x += x_src
             x = x / num_views
             x = self.unpooling[1](

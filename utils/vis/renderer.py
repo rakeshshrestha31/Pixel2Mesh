@@ -133,7 +133,7 @@ class MeshRenderer(object):
             # write_point_cloud(gt_points, '/tmp/{}_gt.ply'.format(i))
             for j in range(3):
                 for k in (["pred_coord_before_deform", "pred_coord"] if j == 0 else ["pred_coord"]):
-                    coord = batch_output[k][j][i][i].cpu().numpy() + mesh_pos
+                    coord = batch_output[k][j][i][0].cpu().numpy() + mesh_pos
                     images_stack.append(self.visualize_reconstruction(gt_points, coord, faces[i][j].cpu().numpy(), image))
                     # write_point_cloud(coord, '/tmp/{}_{}_{}.ply'.format(i, j, k))
 
