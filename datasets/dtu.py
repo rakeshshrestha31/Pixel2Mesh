@@ -13,7 +13,7 @@ from utils.mesh import Ellipsoid
 
 # the DTU dataset preprocessed by Yao Yao (only for training)
 class MVSDataset(BaseDataset):
-    def __init__(self, datapath, listfile, mode, nviews, normalization, debug_scan2=False, ndepths=192, interval_scale=1.06,  mesh_pos=[0., 0., -0.8]):
+    def __init__(self, datapath, listfile, mode, nviews, normalization, debug_scan2=False, ndepths=192, interval_scale=1.06,  mesh_pos=[0., 0., 0]):
         super(MVSDataset, self).__init__()
         self.datapath = datapath
         self.listfile = listfile
@@ -107,7 +107,7 @@ class MVSDataset(BaseDataset):
             # NOTE that the id in image file names is from 1 to 49 (not 0~48)
             img_filename = os.path.join(self.datapath,
                                         'Rectified_resized/{}_train/rect_{:0>3}_{}_r5000.png'.format(scan, vid + 1, light_idx))
-            proj_mat_filename = os.path.join(self.datapath, 'Cameras/train/{:0>8}_cam.txt').format(vid)
+            proj_mat_filename = os.path.join(self.datapath, 'Cameras/train_resized/{:0>8}_cam.txt').format(vid)
             img, img_normalized = self.read_img(img_filename)
             imgs.append(img)
             imgs_normalized.append(img_normalized)
@@ -123,13 +123,11 @@ class MVSDataset(BaseDataset):
                 depth_values = np.arange(depth_min, depth_interval * self.ndepths + depth_min, depth_interval,
                                          dtype=np.float32)
                 pkl_filename = os.path.join(self.datapath, "Points_resized/{}_train/view_{}.dat".format(scan, vid))
-
                 with open(pkl_filename) as f:
                     data = pickle.load(open(pkl_filename, 'rb'), encoding="latin1")
                     pts, normals = data[:, :3], data[:, 3:]
 
         pts -= np.array(self.mesh_pos)
-
         imgs = np.stack(imgs)
         imgs_normalized = np.stack(imgs_normalized)
         proj_matrices = np.stack(proj_matrices)
@@ -137,7 +135,6 @@ class MVSDataset(BaseDataset):
             imgs = np.squeeze(imgs, 0)
             imgs_normalized = np.squeeze(imgs_normalized, 0)
         length = pts.shape[0]
-
         return {"images": imgs_normalized,
                 "images_orig": imgs,
                 "proj_matrices": proj_matrices,
@@ -155,10 +152,10 @@ class MVSDataset(BaseDataset):
         meta = self.metas[idx]
         scan, _, ref_view, _ = meta
 
-        # find a better way than to read the cam file twice
-        # cuz already read in getitem
+        # TODO: find a better way than to read the cam file twice
+        # cuz already read in __getitem__
         proj_mat_filename = os.path.join(
-            self.datapath, 'Cameras/train/{:0>8}_cam.txt'
+            self.datapath, 'Cameras/train_resized/{:0>8}_cam.txt'
         ).format(ref_view)
         _, extrinsics, _, _ = self.read_cam_file(proj_mat_filename)
         return get_initial_mesh(
