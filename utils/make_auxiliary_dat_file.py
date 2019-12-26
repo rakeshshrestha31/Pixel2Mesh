@@ -246,6 +246,7 @@ def generate_auxiliary_dat(args, mesh_filename):
     print('scale:', mesh.scale)
 
     coords_1 = np.array(mesh.vertices, dtype=np.float32)
+    info['coords'] = coords_1
 
     # ## Stage 1 auxiliary matrix
 
