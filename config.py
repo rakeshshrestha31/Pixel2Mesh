@@ -22,8 +22,8 @@ IMG_NORM_MEAN = [0.485, 0.456, 0.406]
 IMG_NORM_STD = [0.229, 0.224, 0.225]
 IMG_SIZE = 224
 
-# diagonal size of the point cloud
-PCD_SIZE = 0.55
+# factor for rescaling DTU points cloud to be compatible for training
+DTU_RESCALE_FACTOR = 5.5e-4
 
 # transformation to align with Pixel2Mesh (shapenet) coordinate frame
 T_shapenet_dtu = np.asarray([
@@ -32,3 +32,6 @@ T_shapenet_dtu = np.asarray([
     [0.0,  0.0, -1.0, 0.0],
     [0.0,  0.0,  0.0, 1.0]
 ])
+
+# voxel size (for downsampling point cloud)
+DTU_VOXEL_SIZE = 5

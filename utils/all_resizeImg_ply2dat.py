@@ -49,26 +49,26 @@ def update_extrinsics(cam_info, extrinsics):
         cam_info['T%d%d' % (i, j)] = extrinsics[i, j]
 
 def process_ply(ply_file, input_cam_info,
-                dat_file, output_cam_file, pcd_size, debug):
+                dat_file, output_cam_file, scale, debug):
     T_cam_world = get_cam_transform(input_cam_info)
     pcd = o3d.io.read_point_cloud(ply_file)
     # downsample the cloud
     # o3d.visualization.draw_geometries([pcd])
-    pcd = pcd.voxel_down_sample(voxel_size=5)
+    pcd = pcd.voxel_down_sample(voxel_size=config.DTU_VOXEL_SIZE)
     # o3d.visualization.draw_geometries([pcd])
 
+
+    # transform point cloud to shapenet frame and correct scale
+    transformation = np.linalg.multi_dot((config.T_shapenet_dtu, T_cam_world))
+    pcd = pcd.transform(transformation)
+    pcd.scale(scale, center=False)
 
     # find size of the cloud
     points = np.asarray(pcd.points, dtype=np.float32)
     max_points = points.max(axis=0)
     min_points = points.min(axis=0)
     raw_pcd_size = np.linalg.norm(max_points - min_points)
-    scale = pcd_size / raw_pcd_size
-
-    # transform point cloud to shapenet frame and correct scale
-    transformation = np.linalg.multi_dot((config.T_shapenet_dtu, T_cam_world))
-    pcd = pcd.transform(transformation)
-    pcd.scale(scale, center=False)
+    print('pcd size:', raw_pcd_size)
 
     # make dat file
     points = np.asarray(pcd.points, dtype=np.float32)
@@ -76,6 +76,9 @@ def process_ply(ply_file, input_cam_info,
     points_normals = np.concatenate((points, normals), axis=1)
     with open(dat_file, 'wb') as f:
         pickle.dump(points_normals, f, protocol=2)
+
+    # make ply file (just for debugging, not used by network)
+    o3d.io.write_point_cloud(dat_file.replace('.dat', '.ply'), pcd)
 
     # make new cam_file
     output_T_cam_world = T_cam_world.copy()
@@ -106,20 +109,22 @@ def process_image(input_image_path, output_image_path):
     print("input_image_path:", input_image_path)
     input_image = cv2.imread(input_image_path, cv2.IMREAD_UNCHANGED)
     output_image = cv2.resize(
-        input_image, (137, 137), cv2.INTER_AREA
+        input_image, (224, 224), cv2.INTER_AREA
     )
     # add alpha channel
     b, g, r = cv2.split(output_image)
     alpha = np.ones(b.shape, dtype=b.dtype) * 255
     output_image = cv2.merge((b, g, r, alpha))
     cv2.imwrite(output_image_path, output_image)
+    return output_image
 
 def parse_args():
     parser = argparse.ArgumentParser(description='resize DTU image')
     parser.add_argument('rectified_images_dir', type=str)
     parser.add_argument('points_dir', type=str)
     parser.add_argument('cams_dir', type=str)
-    parser.add_argument('--pcd-size', default=0.55, type=float)
+    parser.add_argument('--rescale-factor', default=config.DTU_RESCALE_FACTOR,
+                        type=float)
 
     return parser.parse_args()
 
@@ -156,8 +161,20 @@ if __name__ == '__main__':
             input_cam_info = parse_cam_info(input_cam_file)
             process_ply(
                 ply_file, input_cam_info,
-                output_dat_file, output_cam_file, args.pcd_size, True # False
+                output_dat_file, output_cam_file, args.rescale_factor, True # False
             )
+        # one in world frame (just for debugging, not used by network)
+        update_extrinsics(input_cam_info.named, np.eye(4))
+        output_dat_file = rgb_file \
+            .replace("/Rectified/", "/Points_resized/") \
+            .split("/rect")[0]+"/view_world" \
+            .format(file_index)+".dat"
+        process_ply(
+            ply_file, input_cam_info,
+            output_dat_file,
+            os.path.join(args.cams_dir, 'train_resized', 'world.txt'),
+            args.rescale_factor, True # False
+        )
 
 
 # if __name__ == '__main__':
