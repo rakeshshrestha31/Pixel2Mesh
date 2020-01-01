@@ -92,7 +92,11 @@ class MeshRenderer(object):
         if np.isnan(vertices_2d).any():
             return whiteboard, alpha
         for x, y in vertices_2d:
-            cv2.circle(alpha, (int(x), int(y)), radius=1, color=(1., 1., 1.), thickness=-1)
+            try:
+                cv2.circle(alpha, (int(x), int(y)), radius=1, color=(1., 1., 1.), thickness=-1)
+            except OverflowError as e:
+                print("can't render (%r, %r):" % (x, y))
+                # raise(e)
         rgb = _process_render_result(alpha * color[None, None, :], height, width)
         alpha = _process_render_result(alpha[:, :, 0], height, width)
         rgb = _mix_render_result_with_image(rgb, alpha[0], whiteboard)
@@ -115,8 +119,8 @@ class MeshRenderer(object):
                                            camera_k, dist_coeffs, rvec, tvec, **kwargs)
         pred_pc, _ = self._render_pointcloud(coord, image.shape[2], image.shape[1],
                                              camera_k, dist_coeffs, rvec, tvec, **kwargs)
-        return np.concatenate((image, gt_pc, pred_pc), 2)
-        # return np.concatenate((image, gt_pc, pred_pc, mesh), 2)
+        # return np.concatenate((image, gt_pc, pred_pc), 2)
+        return np.concatenate((image, gt_pc, pred_pc, mesh), 2)
 
     def p2m_batch_visualize(self, batch_input, batch_output, faces, atmost=3):
         """
@@ -130,12 +134,12 @@ class MeshRenderer(object):
             gt_points = batch_input["points"][i].cpu().numpy() + mesh_pos
             if len(image.shape) > 3:
                 image = image[0, :]
-            write_point_cloud(gt_points, '/tmp/{}_gt.ply'.format(i))
+            # write_point_cloud(gt_points, '/tmp/{}_gt.ply'.format(i))
             for j in range(3):
                 for k in (["pred_coord_before_deform", "pred_coord"] if j == 0 else ["pred_coord"]):
-                    coord = batch_output[k][j][i].cpu().numpy() + mesh_pos
-                    images_stack.append(self.visualize_reconstruction(gt_points, coord, faces[j].cpu().numpy(), image))
-                    write_point_cloud(coord, '/tmp/{}_{}_{}.ply'.format(i, j, k))
+                    coord = batch_output[k][j][i][0].cpu().numpy() + mesh_pos
+                    images_stack.append(self.visualize_reconstruction(gt_points, coord, faces[i][j].cpu().numpy(), image))
+                    # write_point_cloud(coord, '/tmp/{}_{}_{}.ply'.format(i, j, k))
 
         return torch.from_numpy(np.concatenate(images_stack, 1))
 

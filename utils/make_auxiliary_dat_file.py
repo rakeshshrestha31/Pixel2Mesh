@@ -28,12 +28,7 @@ import subprocess
 # In[2]:
 
 # transformation to align with Pixel2Mesh (shapenet) coordinate frame
-T_shapenet_dtu = np.asarray([
-    [1.0,  0.0,  0.0, 0.0],
-    [0.0, -1.0,  0.0, 0.0],
-    [0.0,  0.0, -1.0, 0.0],
-    [0.0,  0.0,  0.0, 1.0]
-])
+import config
 
 def get_scale_matrix(scale):
     return np.asarray([
@@ -217,10 +212,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('raw_mesh_dir', type=str)
     parser.add_argument('output_dir', type=str)
-    parser.add_argument('--pcd-size', default=0.55, type=float)
+    parser.add_argument('--rescale-factor', default=config.DTU_RESCALE_FACTOR,
+                        type=float)
     return parser.parse_args()
 
-def generate_auxiliary_dat(args, mesh_filename):
+def generate_auxiliary_dat(args, mesh_filename, scale_factor):
     assert mesh_filename[-4:] == '.obj'
     mesh_name = os.path.basename(mesh_filename)[0:-4]
     auxiliary_dir = os.path.join(args.output_dir, mesh_name)
@@ -237,13 +233,13 @@ def generate_auxiliary_dat(args, mesh_filename):
     # raw_mesh = load_obj(mesh_filename, no_normal=True)
     # mesh = trimesh.Trimesh(vertices=raw_mesh['vertices'], faces=(raw_mesh['faces']-1), process=False)
     # assert np.all(raw_mesh['faces'] == mesh.faces+1)
-    mesh = trimesh.load_mesh(mesh_filename, process=True,
-                             scale=args.pcd_size)
+    mesh = trimesh.load_mesh(mesh_filename, process=True)
 
     # ## Step 0: preprocess mesh
-    T_scale = get_scale_matrix(args.pcd_size / mesh.scale)
-    mesh.apply_transform(np.matmul(T_scale, T_shapenet_dtu))
-    print('scale:', mesh.scale)
+    T_scale = get_scale_matrix(scale_factor)
+    mesh.apply_transform(np.matmul(T_scale, config.T_shapenet_dtu))
+    print('scale_factor:', scale_factor)
+    print('mesh size:', mesh.scale)
 
     coords_1 = np.array(mesh.vertices, dtype=np.float32)
     info['coords'] = coords_1
@@ -307,6 +303,11 @@ def generate_auxiliary_dat(args, mesh_filename):
     write_obj(os.path.join(auxiliary_dir, 'face3.obj'),
               coords_3, faces_3)
 
+    # ## Dump the complete meshes (only used for visualization, not for network)
+    meshes = [mesh, mesh2, mesh3]
+    for i, i_mesh in enumerate(meshes):
+        mesh.export(os.path.join(auxiliary_dir, 'mesh%d.ply'%i))
+
     # ## Dump .dat file
     dat = [info['coords'],
            info['support']['stage1'],
@@ -323,9 +324,10 @@ def generate_auxiliary_dat(args, mesh_filename):
 
 if __name__ == '__main__':
     args = parse_args()
-    for filename in os.listdir(args.raw_mesh_dir):
-        abs_file = os.path.join(args.raw_mesh_dir, filename)
-        if filename[-4:] != '.obj' or not os.path.isfile(abs_file):
+    for obj_filename in os.listdir(args.raw_mesh_dir):
+        abs_mesh_file = os.path.join(args.raw_mesh_dir, obj_filename)
+        if obj_filename[-4:] != '.obj' \
+           or not os.path.isfile(abs_mesh_file):
             continue
-        print('processing', filename)
-        generate_auxiliary_dat(args, abs_file)
+        print('processing', obj_filename)
+        generate_auxiliary_dat(args, abs_mesh_file, args.rescale_factor)

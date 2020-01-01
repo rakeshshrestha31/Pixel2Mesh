@@ -40,7 +40,7 @@ class Evaluator(CheckpointRunner):
         else:
             if self.options.model.name == "pixel2mesh":
                 # create model
-                self.model = P2MModel(self.options.model, self.ellipsoid,
+                self.model = P2MModel(self.options.model,
                                       self.options.dataset.camera_f, self.options.dataset.camera_c,
                                       self.options.dataset.mesh_pos)
             elif self.options.model.name == "classifier":
@@ -64,12 +64,14 @@ class Evaluator(CheckpointRunner):
     def evaluate_chamfer_and_f1(self, pred_vertices, gt_points, labels):
         # calculate accurate chamfer distance; ground truth points with different lengths;
         # therefore cannot be batched
-        batch_size = pred_vertices.size(0)
-        pred_length = pred_vertices.size(1)
+        batch_size = len(pred_vertices)
+        pred_length = pred_vertices[0].size(0)
         for i in range(batch_size):
             gt_length = gt_points[i].size(0)
             label = labels[i].cpu().item()
-            d1, d2, i1, i2 = self.chamfer(pred_vertices[i].unsqueeze(0), gt_points[i].unsqueeze(0))
+            d1, d2, i1, i2 = self.chamfer(
+                pred_vertices[i], gt_points[i].unsqueeze(0)
+            )
             d1, d2 = d1.cpu().numpy(), d2.cpu().numpy()  # convert to millimeter
             self.chamfer_distance[label].update(np.mean(d1) + np.mean(d2))
             self.f1_tau[label].update(self.evaluate_f1(d1, d2, pred_length, gt_length, 1E-4))
@@ -93,7 +95,7 @@ class Evaluator(CheckpointRunner):
             elif k == 5:
                 self.acc_5.update(acc)
 
-    def evaluate_step(self, input_batch):
+    def evaluate_step(self, input_batch, initial_meshes):
         self.model.eval()
 
         # Run inference
@@ -103,7 +105,7 @@ class Evaluator(CheckpointRunner):
             proj_matrices = input_batch["proj_matrices"]
 
             # predict with model
-            out = self.model(images, proj_matrices)
+            out = self.model(images, proj_matrices, initial_meshes)
 
             if self.options.model.name == "pixel2mesh":
                 pred_vertices = out["pred_coord"][-1]
@@ -141,15 +143,19 @@ class Evaluator(CheckpointRunner):
 
         # Iterate over all batches in an epoch
         for step, batch in enumerate(test_data_loader):
+            initial_meshes = [
+                self.dataset.get_initial_mesh(idx)
+                for idx in batch['idx'].tolist()
+            ]
             # Send input to GPU
             batch = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
             # Run evaluation step
-            out = self.evaluate_step(batch)
+            out = self.evaluate_step(batch, initial_meshes)
 
             # Tensorboard logging every summary_steps steps
             if self.evaluate_step_count % self.options.test.summary_steps == 0:
-                self.evaluate_summaries(batch, out)
+                self.evaluate_summaries(batch, out, initial_meshes)
 
             # add later to log at step 0
             self.evaluate_step_count += 1
@@ -187,7 +193,7 @@ class Evaluator(CheckpointRunner):
                 "acc_5": self.acc_5,
             }
 
-    def evaluate_summaries(self, input_batch, out_summary):
+    def evaluate_summaries(self, input_batch, out_summary, initial_meshes):
         self.logger.info("Test Step %06d/%06d (%06d) " % (self.evaluate_step_count,
                                                           len(self.dataset) // (
                                                                   self.options.num_gpus * self.options.test.batch_size),
@@ -199,5 +205,8 @@ class Evaluator(CheckpointRunner):
                                           self.total_step_count)
         if self.renderer is not None:
             # Do visualization for the first 2 images of the batch
-            render_mesh = self.renderer.p2m_batch_visualize(input_batch, out_summary, self.ellipsoid.faces)
+            render_mesh = self.renderer.p2m_batch_visualize(
+                input_batch, out_summary,
+                [initial_meshes[i].faces for i in range(len(initial_meshes))]
+            )
             self.summary_writer.add_image("eval_render_mesh", render_mesh, self.total_step_count)
