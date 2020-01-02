@@ -1,19 +1,19 @@
 checkpoint: null
-checkpoint_dir: checkpoints
+checkpoint_dir: /tmp/checkpoints
 dataset:
   camera_c:
-  - 112.0
-  - 112.0
+  - 116.061
+  - 116.172
   camera_f:
-  - 250.0
-  - 250.0
+  - 506.158
+  - 630.693
   mesh_pos:
   - 0.0
   - 0.0
   - 0.0
   name: shapenet
-  normalization: false
-  num_classes: 13
+  normalization: true # false
+  num_classes: 1 # 13
   predict:
     folder: /tmp
   shapenet:
@@ -22,7 +22,7 @@ dataset:
   subset_eval: test_tf
   subset_train: train_tf
 log_dir: logs
-log_level: info
+log_level: info # debug #
 loss:
   weights:
     chamfer:
@@ -50,7 +50,7 @@ num_gpus: 1
 num_workers: 16
 optim:
   adam_beta1: 0.9
-  lr: 1.0e-06
+  lr: 1.0e-04 # 1.0e-06
   lr_factor: 0.1
   lr_step:
   - 30
@@ -68,10 +68,10 @@ test:
   weighted_mean: false
 train:
   batch_size: 1
-  checkpoint_steps: 10000
-  num_epochs: 2
+  checkpoint_steps: 100000 # 10000
+  num_epochs: 1000
   shuffle: true
-  summary_steps: 1
-  test_epochs: 1
+  summary_steps: 50 #1
+  test_epochs: 5
   use_augmentation: true
 version: null
