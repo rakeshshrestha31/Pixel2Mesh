@@ -4,3 +4,6 @@
 [submodule "utils/mesh_decimation/vcglib"]
 	path = utils/mesh_decimation/vcglib
 	url = https://github.com/rakeshshrestha31/vcglib.git
+[submodule "utils/PoissonRecon"]
+	path = utils/PoissonRecon
+	url = https://github.com/mkazhdan/PoissonRecon.git
