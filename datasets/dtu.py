@@ -13,7 +13,7 @@ from utils.mesh import Ellipsoid
 
 # the DTU dataset preprocessed by Yao Yao (only for training)
 class MVSDataset(BaseDataset):
-    def __init__(self, datapath, listfile, mode, nviews, normalization, debug_scan2=False, ndepths=192, interval_scale=1.06,  mesh_pos=[0., 0., 0]):
+    def __init__(self, datapath, listfile, mode, nviews, normalization, debug_scan2=False, ndepths=48, depth_interals_ratio=4, interval_scale=1.06, mesh_pos=[0., 0., 0]):
         super(MVSDataset, self).__init__()
         self.datapath = datapath
         self.listfile = listfile
@@ -24,6 +24,7 @@ class MVSDataset(BaseDataset):
         self.normalization = normalization
         self.debug_scan2 = debug_scan2
         self.mesh_pos = mesh_pos
+        self.depth_interals_ratio = depth_interals_ratio
 
         assert self.mode in ["train", "val", "test"]
         self.metas = self.build_list()
@@ -71,7 +72,7 @@ class MVSDataset(BaseDataset):
         intrinsics = np.fromstring(' '.join(lines[7:10]), dtype=np.float32, sep=' ').reshape((3, 3))
         # depth_min & depth_interval: line 11
         depth_min = float(lines[11].split()[0])
-        depth_interval = float(lines[11].split()[1]) * self.interval_scale
+        depth_interval = float(lines[11].split()[1]) * self.interval_scale * self.depth_interals_ratio
         return intrinsics, extrinsics, depth_min, depth_interval
 
     def read_img(self, filename):
@@ -88,9 +89,19 @@ class MVSDataset(BaseDataset):
 
         return img, img_normalized
 
+    def read_mask(self, filename):
+        img = Image.open(filename)
+        # scale 0~255 to 0~1
+        np_img = np.array(img, dtype=np.float32) / 255.
+        np_img = cv2.resize(np_img, (56, 56), interpolation=cv2.INTER_NEAREST)
+        return np_img
+
     def read_depth(self, filename):
         # read pfm depth file
-        return np.array(read_pfm(filename)[0], dtype=np.float32)
+        depth = np.array(read_pfm(filename)[0], dtype=np.float32)
+        h, w = depth.shape
+        depth = cv2.resize(depth, (56, 56), interpolation=cv2.INTER_NEAREST)
+        return depth
 
     def __getitem__(self, idx):
         meta = self.metas[idx]
@@ -108,6 +119,8 @@ class MVSDataset(BaseDataset):
             img_filename = os.path.join(self.datapath,
                                         'Rectified_resized/{}_train/rect_{:0>3}_{}_r5000.png'.format(scan, vid + 1, light_idx))
             proj_mat_filename = os.path.join(self.datapath, 'Cameras/train_resized/{:0>8}_cam.txt').format(vid)
+            depth_filename = os.path.join(self.datapath, 'Depths/{}_train/depth_map_{:0>4}.pfm'.format(scan, vid))
+            mask_filename = os.path.join(self.datapath, 'Depths/{}_train/depth_visual_{:0>4}.png'.format(scan, vid))
             img, img_normalized = self.read_img(img_filename)
             imgs.append(img)
             imgs_normalized.append(img_normalized)
@@ -123,6 +136,8 @@ class MVSDataset(BaseDataset):
                 depth_values = np.arange(depth_min, depth_interval * self.ndepths + depth_min, depth_interval,
                                          dtype=np.float32)
                 pkl_filename = os.path.join(self.datapath, "Points_resized/{}_train/view_{}.dat".format(scan, vid))
+                depth = self.read_depth(depth_filename)
+                mask = self.read_mask(mask_filename)
                 with open(pkl_filename) as f:
                     data = pickle.load(open(pkl_filename, 'rb'), encoding="latin1")
                     pts, normals = data[:, :3], data[:, 3:]
@@ -138,7 +153,8 @@ class MVSDataset(BaseDataset):
         return {"images": imgs_normalized,
                 "images_orig": imgs,
                 "proj_matrices": proj_matrices,
-                # "depth": depth,
+                "depth": depth,
+                "mask": mask,
                 "depth_values": depth_values,
                 "points": pts,
                 "normals": normals,
