@@ -57,7 +57,7 @@ class P2MModel(nn.Module):
 
 
 
-    def forward(self, img, proj, ellipsoids):
+    def forward(self, img, proj, ellipsoids, depth_values=None):
         batch_size = img.size(0)
         assert(batch_size, len(ellipsoids))
         init_pts = []
@@ -76,7 +76,8 @@ class P2MModel(nn.Module):
         img_list = torch.unbind(img, 1)
         proj_list = torch.unbind(proj, 1)
         num_views = len(img_list)
-        feature_list = [self.nn_encoder(i) for i in img_list]
+        out_encoder = self.nn_encoder(img_list, proj, depth_values)
+        feature_list = out_encoder["features"]#[self.nn_encoder(i) for i in img_list]
         ref_feature, src_feature_list = feature_list[0], feature_list[1:]
         ref_proj, src_proj_list       = proj_list[0], proj_list[1:]
 
@@ -102,18 +103,6 @@ class P2MModel(nn.Module):
                 batch_from_list(ref_feature, batch_idx),
                 init_pts[batch_idx]
             )
-            for src_feature, src_proj in zip(src_feature_list, src_proj_list):
-                init_pts_src = self.src2ref(
-                    init_pts[batch_idx],
-                    batch_from_tensor(ref_proj, batch_idx),
-                    batch_from_tensor(src_proj, batch_idx)
-                )
-                x_src = self.projection(
-                    img_shape,
-                    batch_from_list(src_feature, batch_idx), init_pts_src
-                )
-                x += x_src
-            x = x / num_views
 
             # x1 shape is torch.Size([16, 156, 3]), x_h
             x1, x_hidden = self.gcns[0](x, ellipsoids[batch_idx].adj_mat[0])
@@ -125,18 +114,6 @@ class P2MModel(nn.Module):
             x = self.projection(img_shape,
                                 batch_from_list(ref_feature, batch_idx), x1)
 
-            for src_feature, src_proj in zip(src_feature_list, src_proj_list):
-                x1_src = self.src2ref(
-                    x1,
-                    batch_from_tensor(ref_proj, batch_idx),
-                    batch_from_tensor(src_proj, batch_idx)
-                )
-                x_src = self.projection(
-                    img_shape,
-                    batch_from_list(src_feature, batch_idx), x1_src
-                )
-                x += x_src
-            x = x / num_views
             x = self.unpooling[0](
                 torch.cat([x, x_hidden], 2),
                 ellipsoids[batch_idx].unpool_idx[0]
@@ -154,17 +131,6 @@ class P2MModel(nn.Module):
                 img_shape, batch_from_list(ref_feature, batch_idx), x2
             )
 
-            for src_feature, src_proj in zip(src_feature_list, src_proj_list):
-                x2_src = self.src2ref(
-                    x2,
-                    batch_from_tensor(ref_proj, batch_idx),
-                    batch_from_tensor(src_proj, batch_idx)
-                )
-                x_src = self.projection(
-                    img_shape, batch_from_list(src_feature, batch_idx), x2_src
-                )
-                x += x_src
-            x = x / num_views
             x = self.unpooling[1](
                 torch.cat([x, x_hidden], 2),
                 ellipsoids[batch_idx].unpool_idx[1]
@@ -191,5 +157,6 @@ class P2MModel(nn.Module):
         return {
             "pred_coord": [x1s, x2s, x3s],
             "pred_coord_before_deform": [init_pts, x1_ups, x2_ups],
-            "reconst": reconst
+            "reconst": reconst,
+            "depth": out_encoder["depth"],
         }
