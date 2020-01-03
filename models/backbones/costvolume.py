@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn import MaxPool1d
 import torch.nn.functional as F
 
 
@@ -78,14 +79,16 @@ class MVSNet(nn.Module):
     def __init__(self):
         super(MVSNet, self).__init__()
 
-        self.feature = FeatureNet()
-        self.features_dim = 384
+        self.feature = VGG16TensorflowAlign()
+        self.features_dim = 960 + 191
+        # self.features_dim = 384
+        self.cost_regularization = CostRegNet()
 
 
-    def forward(self, imgs, proj_matrices, depth_values):
-        imgs = torch.unbind(imgs, 1)
-        proj_matrices = torch.unbind(proj_matrices, 1)
-        assert len(imgs) == len(proj_matrices), "Different number of images and projection matrices"
+    def forward(self, imgs, proj_matrices, depth_values=None):
+        # imgs = torch.unbind(imgs, 1)
+        # proj_matrices = torch.unbind(proj_matrices, 1)
+        # assert len(imgs) == len(proj_matrices), "Different number of images and projection matrices"
         img_height, img_width = imgs[0].shape[2], imgs[0].shape[3]
         num_depth = depth_values.shape[1]
         num_views = len(imgs)
@@ -93,25 +96,28 @@ class MVSNet(nn.Module):
         # step 1. feature extraction
         # in: images; out: 32-channel feature maps
         features = [self.feature(img) for img in imgs]
-        ref_feature, src_features = features[0], features[1:]
+        ref_feature = features[0][0]
+        src_features = []
+        for i in range(len(features[1:3])):
+            src_features.append(features[i][0])
+
         ref_proj, src_projs = proj_matrices[0], proj_matrices[1:]
 
         # step 2. differentiable homograph, build cost volume
         ref_volume = ref_feature.unsqueeze(2).repeat(1, 1, num_depth, 1, 1)
         volume_sum = ref_volume
-        volume_sq_sum = ref_volume ** 2
+        volume_sq_sum = ref_volume.clone() ** 2
+        # volume_sq_sum = ref_volume.pow_(2)
         del ref_volume
         for src_fea, src_proj in zip(src_features, src_projs):
-
             #
-            # src_proj[:, 1, :2, :3] = src_proj[:, 1, :2, :3] / 4.
-            # ref_proj[:, 1, :2, :3] = ref_proj[:, 1, :2, :3] / 4.
+            src_proj[:, 1, :2, :3] = src_proj[:, 1, :2, :3] / 4.
+            ref_proj[:, 1, :2, :3] = ref_proj[:, 1, :2, :3] / 4.
             #
             src_proj_new = src_proj[:, 0].clone()
             src_proj_new[:, :3, :4] = torch.matmul(src_proj[:, 1, :3, :3], src_proj[:, 0, :3, :4])
             ref_proj_new = ref_proj[:, 0].clone()
             ref_proj_new[:, :3, :4] = torch.matmul(ref_proj[:, 1, :3, :3], ref_proj[:, 0, :3, :4])
-
             #
             # warpped features
             warped_volume = homo_warping(src_fea, src_proj_new, ref_proj_new, depth_values)
@@ -126,5 +132,163 @@ class MVSNet(nn.Module):
         # aggregate multiple feature volumes by variance
         volume_variance = volume_sq_sum.div_(num_views).sub_(volume_sum.div_(num_views).pow_(2))
 
-        return {"cv": volume_variance}
+        # step 3. cost volume regularization
+        cost_agg = self.cost_regularization(volume_variance)
+        cost_reg = cost_agg["x"]
+        cost_agg_feature = cost_agg["x_agg"]
 
+        cost_reg = cost_reg.squeeze(1)
+        prob_volume = F.softmax(cost_reg, dim=1)
+        depth = depth_regression(prob_volume, depth_values=depth_values)
+        # add cost aggregated feature
+        features[0].append(cost_agg_feature)
+        return {"features": features, "depth":depth}
+
+
+class VGG16TensorflowAlign(nn.Module):
+
+    def __init__(self, n_classes_input=3):
+        super(VGG16TensorflowAlign, self).__init__()
+
+        self.features_dim = 960 #191
+        # this is to align with tensorflow padding (with stride)
+        # https://bugxch.github.io/tf%E4%B8%AD%E7%9A%84padding%E6%96%B9%E5%BC%8FSAME%E5%92%8CVALID%E6%9C%89%E4%BB%80%E4%B9%88%E5%8C%BA%E5%88%AB/
+        self.same_padding = nn.ZeroPad2d(1)
+        self.tf_padding = nn.ZeroPad2d((0, 1, 0, 1))
+        self.tf_padding_2 = nn.ZeroPad2d((1, 2, 1, 2))
+
+        self.conv0_1 = nn.Conv2d(n_classes_input, 16, 3, stride=1, padding=0)
+        self.conv0_2 = nn.Conv2d(16, 16, 3, stride=1, padding=0)
+
+        self.conv1_1 = nn.Conv2d(16, 32, 3, stride=2, padding=0)  # 224 -> 112
+        self.conv1_2 = nn.Conv2d(32, 32, 3, stride=1, padding=0)
+        self.conv1_3 = nn.Conv2d(32, 32, 3, stride=1, padding=0)
+
+        self.conv2_1 = nn.Conv2d(32, 64, 3, stride=2, padding=0)  # 112 -> 56
+        self.conv2_2 = nn.Conv2d(64, 64, 3, stride=1, padding=0)
+        self.conv2_3 = nn.Conv2d(64, 64, 3, stride=1, padding=0)
+
+        self.conv3_1 = nn.Conv2d(64, 128, 3, stride=2, padding=0)  # 56 -> 28
+        self.conv3_2 = nn.Conv2d(128, 128, 3, stride=1, padding=0)
+        self.conv3_3 = nn.Conv2d(128, 128, 3, stride=1, padding=0)
+
+        self.conv4_1 = nn.Conv2d(128, 256, 5, stride=2, padding=0)  # 28 -> 14
+        self.conv4_2 = nn.Conv2d(256, 256, 3, stride=1, padding=0)
+        self.conv4_3 = nn.Conv2d(256, 256, 3, stride=1, padding=0)
+
+        self.conv5_1 = nn.Conv2d(256, 512, 5, stride=2, padding=0)  # 14 -> 7
+        self.conv5_2 = nn.Conv2d(512, 512, 3, stride=1, padding=0)
+        self.conv5_3 = nn.Conv2d(512, 512, 3, stride=1, padding=0)
+        self.conv5_4 = nn.Conv2d(512, 512, 3, stride=1, padding=0)
+
+    def forward(self, img):
+        img = F.relu(self.conv0_1(self.same_padding(img)))
+        img = F.relu(self.conv0_2(self.same_padding(img)))
+
+        img = F.relu(self.conv1_1(self.tf_padding(img)))
+        img = F.relu(self.conv1_2(self.same_padding(img)))
+        img = F.relu(self.conv1_3(self.same_padding(img)))
+
+        img = F.relu(self.conv2_1(self.tf_padding(img)))
+        img = F.relu(self.conv2_2(self.same_padding(img)))
+        img = F.relu(self.conv2_3(self.same_padding(img)))
+        img2 = img
+
+        img = F.relu(self.conv3_1(self.tf_padding(img)))
+        img = F.relu(self.conv3_2(self.same_padding(img)))
+        img = F.relu(self.conv3_3(self.same_padding(img)))
+        img3 = img
+
+        img = F.relu(self.conv4_1(self.tf_padding_2(img)))
+        img = F.relu(self.conv4_2(self.same_padding(img)))
+        img = F.relu(self.conv4_3(self.same_padding(img)))
+        img4 = img
+
+        img = F.relu(self.conv5_1(self.tf_padding_2(img)))
+        img = F.relu(self.conv5_2(self.same_padding(img)))
+        img = F.relu(self.conv5_3(self.same_padding(img)))
+        img = F.relu(self.conv5_4(self.same_padding(img)))
+        img5 = img
+
+        return [img2, img3, img4, img5]
+
+
+class ConvBnReLU3D(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, pad=1):
+        super(ConvBnReLU3D, self).__init__()
+        self.conv = nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=pad, bias=False)
+        self.bn = nn.BatchNorm3d(out_channels)
+
+    def forward(self, x):
+        return F.relu(self.bn(self.conv(x)), inplace=True)
+
+class CostRegNet(nn.Module):
+    def __init__(self):
+        super(CostRegNet, self).__init__()
+        self.conv0 = ConvBnReLU3D(64, 8)
+
+        self.conv1 = ConvBnReLU3D(8, 16, stride=2)
+        self.conv2 = ConvBnReLU3D(16, 16)
+
+        self.conv3 = ConvBnReLU3D(16, 32, stride=2)
+        self.conv4 = ConvBnReLU3D(32, 32)
+
+        self.conv5 = ConvBnReLU3D(32, 64, stride=2)
+        self.conv6 = ConvBnReLU3D(64, 64)
+
+        self.conv7 = nn.Sequential(
+            nn.ConvTranspose3d(64, 32, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(32),
+            nn.ReLU(inplace=True))
+
+        self.conv9 = nn.Sequential(
+            nn.ConvTranspose3d(32, 16, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(16),
+            nn.ReLU(inplace=True))
+
+        self.conv11 = nn.Sequential(
+            nn.ConvTranspose3d(16, 8, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(8),
+            nn.ReLU(inplace=True))
+
+        self.prob = nn.Conv3d(8, 1, 3, stride=1, padding=1)
+        self.channelpool = ChannelPool()
+
+    def forward(self, x):
+
+        conv0 = self.conv0(x)
+        conv2 = self.conv2(self.conv1(conv0))
+        conv4 = self.conv4(self.conv3(conv2))
+        x = self.conv6(self.conv5(conv4))
+        x = conv4 + self.conv7(x)
+        x = conv2 + self.conv9(x)
+        x = conv0 + self.conv11(x)
+        #max pool on aggregated feature
+        b, c, d, h, w = x.shape
+        x_agg = x.view(b, c*d, h, w).contiguous()
+        # x_agg =  torch.randn(b, c*d, h, w).cuda()
+        x_agg = self.channelpool(x_agg)  #191, 56, 56
+        #
+        x = self.prob(x)
+        return {"x":x, "x_agg":x_agg}
+
+# p: probability volume [B, D, H, W]
+# depth_values: discrete depth values [B, D]
+def depth_regression(p, depth_values):
+    depth_values = depth_values.view(*depth_values.shape, 1, 1)
+    depth = torch.sum(p * depth_values, 1)
+    return depth
+
+class ChannelPool(MaxPool1d):
+    def __init__(self):
+        super(ChannelPool, self).__init__(kernel_size=4)
+        # self.kernel_size = 4
+        self.stride = 2
+
+    def forward(self, input):
+        n, c, w, h = input.size()
+        input = input.view(n,c,w*h).permute(0,2,1)
+        pooled =  F.max_pool1d(input, self.kernel_size, self.stride)
+        _, _, c = pooled.size()
+        pooled = pooled.permute(0,2,1)
+        return pooled.view(n,c,w,h)
