@@ -73,6 +73,10 @@ class P2MLoss(nn.Module):
         rect_loss = F.binary_cross_entropy(pred_img, gt_img)
         return rect_loss
 
+    def depth_loss(self, depth_gt, depth_est, mask):
+        mask = mask > 0.5
+        return F.smooth_l1_loss(depth_est[mask], depth_gt[mask], size_average=True)
+
     def forward(self, outputs, targets, ellipsoids):
         """
         :param outputs: outputs from P2MModel
@@ -81,11 +85,12 @@ class P2MLoss(nn.Module):
         :return: loss, loss_summary (dict)
         """
 
-        chamfer_loss, edge_loss, normal_loss, lap_loss, move_loss = 0., 0., 0., 0., 0.
+        chamfer_loss, edge_loss, normal_loss, lap_loss, move_loss, depth_loss = 0., 0., 0., 0., 0., 0.
         lap_const = [0.2, 1., 1.]
 
-        gt_coord, gt_normal, gt_images = targets["points"], targets["normals"], targets["images"]
+        gt_coord, gt_normal, gt_images, gt_depth, mask = targets["points"], targets["normals"], targets["images"], targets["depth"], targets["mask"]
         pred_coord, pred_coord_before_deform = outputs["pred_coord"], outputs["pred_coord_before_deform"]
+        pred_depth = outputs["depth"]
         image_loss = 0.
 
         # TODO uncommit this line
@@ -123,17 +128,17 @@ class P2MLoss(nn.Module):
                 lap_loss += lap_const[i] * lap
                 move_loss += lap_const[i] * move
 
+                if i == 0:
+                    depth_loss += self.depth_loss(gt_depth, pred_depth, mask)
+
         loss = chamfer_loss + image_loss * self.options.weights.reconst + \
                self.options.weights.laplace * lap_loss + \
                self.options.weights.move * move_loss + \
                self.options.weights.edge * edge_loss + \
-               self.options.weights.normal * normal_loss
+               self.options.weights.normal * normal_loss + \
+               self.options.weights.depth * depth_loss
 
-        # loss = self.options.weights.reconst + \
-        #        self.options.weights.laplace * lap_loss + \
-        #        self.options.weights.move * move_loss + \
-        #        self.options.weights.edge * edge_loss + \
-        #        self.options.weights.normal * normal_loss
+        # loss = depth_loss
 
         loss = loss * self.options.weights.constant
 
@@ -144,6 +149,7 @@ class P2MLoss(nn.Module):
             "loss_laplace": lap_loss,
             "loss_move": move_loss,
             "loss_normal": normal_loss,
+            "loss_depth": depth_loss,
         }
 
 def extract_meshes_info(meshes, device):

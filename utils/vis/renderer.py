@@ -1,6 +1,6 @@
 import cv2
 import neural_renderer as nr
-import open3d as o3d
+# import open3d as o3d
 import numpy as np
 import torch
 
@@ -101,8 +101,12 @@ class MeshRenderer(object):
         alpha = _process_render_result(alpha[:, :, 0], height, width)
         rgb = _mix_render_result_with_image(rgb, alpha[0], whiteboard)
         return rgb, alpha
+    def _1to3channel(self, img):
+        img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_NEAREST)
+        img = np.repeat(np.expand_dims(img, 0), 3, 0)
+        return img
 
-    def visualize_reconstruction(self, gt_coord, coord, faces, image, mesh_only=False, **kwargs):
+    def visualize_reconstruction(self, gt_coord, coord, faces, image, pred_depth, gt_depth, mask, mesh_only=False, **kwargs):
         camera_k = np.array([[self.camera_f[0], 0, self.camera_c[0]],
                              [0, self.camera_f[1], self.camera_c[1]],
                              [0, 0, 1]])
@@ -119,8 +123,11 @@ class MeshRenderer(object):
                                            camera_k, dist_coeffs, rvec, tvec, **kwargs)
         pred_pc, _ = self._render_pointcloud(coord, image.shape[2], image.shape[1],
                                              camera_k, dist_coeffs, rvec, tvec, **kwargs)
+        pred_depth = self._1to3channel(pred_depth)
+        gt_depth = self._1to3channel(gt_depth)
+        mask = self._1to3channel(mask)
         # return np.concatenate((image, gt_pc, pred_pc), 2)
-        return np.concatenate((image, gt_pc, pred_pc, mesh), 2)
+        return np.concatenate((image, pred_depth, gt_depth, mask, gt_pc, pred_pc, mesh), 2)
 
     def p2m_batch_visualize(self, batch_input, batch_output, faces, atmost=3):
         """
@@ -131,6 +138,13 @@ class MeshRenderer(object):
         mesh_pos = np.array(self.mesh_pos)
         for i in range(batch_size):
             image = batch_input["images_orig"][i].cpu().numpy()
+            gt_depth = batch_input["depth"][i].cpu().numpy()
+            pred_depth = batch_output["depth"][i].cpu().numpy()
+            depth_max = np.max(gt_depth)
+            gt_depth = gt_depth / depth_max
+            depth_max = np.max(pred_depth)
+            pred_depth = pred_depth / depth_max
+            mask = batch_input["mask"][i].cpu().numpy()
             gt_points = batch_input["points"][i].cpu().numpy() + mesh_pos
             if len(image.shape) > 3:
                 image = image[0, :]
@@ -138,7 +152,7 @@ class MeshRenderer(object):
             for j in range(3):
                 for k in (["pred_coord_before_deform", "pred_coord"] if j == 0 else ["pred_coord"]):
                     coord = batch_output[k][j][i][0].cpu().numpy() + mesh_pos
-                    images_stack.append(self.visualize_reconstruction(gt_points, coord, faces[i][j].cpu().numpy(), image))
+                    images_stack.append(self.visualize_reconstruction(gt_points, coord, faces[i][j].cpu().numpy(), image, pred_depth, gt_depth, mask))
                     # write_point_cloud(coord, '/tmp/{}_{}_{}.ply'.format(i, j, k))
 
         return torch.from_numpy(np.concatenate(images_stack, 1))

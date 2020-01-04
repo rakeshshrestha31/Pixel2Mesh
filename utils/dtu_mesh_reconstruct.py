@@ -37,6 +37,10 @@ if __name__ == '__main__':
            or not os.path.isfile(abs_input_ply_filename):
             continue
 
+        # TODO: only for debug, remove this
+        if relative_filename not in ['stl002_total.ply', 'stl004_total.ply']:
+            continue
+
         print('reconstructing', abs_input_ply_filename)
         subprocess.run([
             args.reconstruction_exec,

@@ -1,6 +1,7 @@
 from models.backbones.resnet import resnet50
 from models.backbones.encoder8 import Encoder8
 from models.backbones.vgg16 import VGG16TensorflowAlign, VGG16P2M, VGG16Recons
+from models.backbones.costvolume import MVSNet
 
 
 def get_backbone(options):
@@ -15,6 +16,9 @@ def get_backbone(options):
         nn_decoder = None
     elif options.backbone == "encoder8":
         nn_encoder = Encoder8()
+        nn_decoder = None
+    elif options.backbone == "costvolume":
+        nn_encoder = MVSNet()
         nn_decoder = None
     else:
         raise NotImplementedError("No implemented backbone called '%s' found" % options.backbone)

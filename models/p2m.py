@@ -56,7 +56,6 @@ class P2MModel(nn.Module):
         return  pts
 
 
-
     def forward(self, img, proj, ellipsoids, depth_values=None):
         batch_size = img.size(0)
         assert(batch_size, len(ellipsoids))

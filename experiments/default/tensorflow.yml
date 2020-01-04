@@ -36,6 +36,7 @@ loss:
     move: 0.033
     normal: 0.00016
     reconst: 0.0
+    depth: 0.0001
 model:
   align_with_tensorflow: true
   backbone: vgg16
@@ -61,10 +62,10 @@ optim:
 pin_memory: true
 summary_dir: summary
 test:
-  batch_size: 24
+  batch_size: 1
   dataset: []
   shuffle: true
-  summary_steps: 5
+  summary_steps: 50
   weighted_mean: false
 train:
   batch_size: 1

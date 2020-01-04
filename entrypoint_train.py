@@ -1,7 +1,6 @@
 import argparse
 import sys
-
-import open3d as o3d
+# import open3d as o3d
 from functions.trainer import Trainer
 from options import update_options, options, reset_options
 

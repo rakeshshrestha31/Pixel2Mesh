@@ -103,9 +103,10 @@ class Evaluator(CheckpointRunner):
             # Get ground truth
             images = input_batch['images']
             proj_matrices = input_batch["proj_matrices"]
+            depth_values = input_batch["depth_values"]
 
             # predict with model
-            out = self.model(images, proj_matrices, initial_meshes)
+            out = self.model(images, proj_matrices, initial_meshes, depth_values)
 
             if self.options.model.name == "pixel2mesh":
                 pred_vertices = out["pred_coord"][-1]

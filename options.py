@@ -73,6 +73,7 @@ options.loss.weights.constant = 1.
 options.loss.weights.chamfer = [1., 1., 1.]
 options.loss.weights.chamfer_opposite = 1.
 options.loss.weights.reconst = 0.
+options.loss.weights.depth = 1e-4
 
 options.train = edict()
 options.train.num_epochs = 200
