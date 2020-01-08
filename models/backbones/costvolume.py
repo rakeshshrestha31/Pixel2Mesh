@@ -154,7 +154,8 @@ class MVSNet(nn.Module):
 
         self.feature = VGG16P2M()
         # self.features_dim = 960# + 191
-        self.features_dim = 191
+        self.features_dim = 8
+
         # self.features_dim = 384
         self.cost_regularization = CostRegNet()
 
@@ -354,10 +355,11 @@ class CostRegNet(nn.Module):
         x = conv2 + self.conv9(x)
         x = conv0 + self.conv11(x)
         #max pool on aggregated feature
-        b, c, d, h, w = x.shape
-        x_agg = x.view(b, c*d, h, w).contiguous()
+        # b, c, d, h, w = x.shape
+        x_agg = x
+        # x_agg = x.view(b, c*d, h, w).contiguous()
         # x_agg =  torch.randn(b, c*d, h, w).cuda()
-        x_agg = self.channelpool(x_agg)  #191, 56, 56
+        # x_agg = self.channelpool(x_agg)  #191, 56, 56
         #
         x = self.prob(x)
         return {"x":x, "x_agg":x_agg}

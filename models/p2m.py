@@ -7,6 +7,7 @@ from models.layers.gbottleneck import GBottleneck
 from models.layers.gconv import GConv
 from models.layers.gpooling import GUnpooling
 from models.layers.gprojection import GProjection
+from models.layers.gprojection_xyz import GProjection as GProjectionXYZ
 
 
 class P2MModel(nn.Module):
@@ -40,7 +41,7 @@ class P2MModel(nn.Module):
         #     self.projection = GProjection
         # else:
         #     self.projection = GProjection
-        self.projection = GProjection(mesh_pos, camera_f, camera_c, bound=options.z_threshold,
+        self.projection = GProjectionXYZ(mesh_pos, camera_f, camera_c, bound=options.z_threshold,
                                       tensorflow_compatible=options.align_with_tensorflow)
 
         self.gconv = GConv(in_features=self.last_hidden_dim, out_features=self.coord_dim)
@@ -100,7 +101,9 @@ class P2MModel(nn.Module):
             x = self.projection(
                 img_shape,
                 batch_from_list(ref_feature, batch_idx),
-                init_pts[batch_idx]
+                init_pts[batch_idx],
+                depth_values
+
             )
 
             # x1 shape is torch.Size([16, 156, 3]), x_h
@@ -111,7 +114,7 @@ class P2MModel(nn.Module):
 
             # GCN Block 2
             x = self.projection(img_shape,
-                                batch_from_list(ref_feature, batch_idx), x1)
+                                batch_from_list(ref_feature, batch_idx), x1, depth_values)
 
             x = self.unpooling[0](
                 torch.cat([x, x_hidden], 2),
@@ -127,7 +130,7 @@ class P2MModel(nn.Module):
             # GCN Block 3
             # x2 shape is torch.Size([16, 618, 3])
             x = self.projection(
-                img_shape, batch_from_list(ref_feature, batch_idx), x2
+                img_shape, batch_from_list(ref_feature, batch_idx), x2, depth_values
             )
 
             x = self.unpooling[1](
