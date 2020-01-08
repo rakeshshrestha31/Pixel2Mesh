@@ -137,6 +137,7 @@ class MVSDataset(BaseDataset):
                                          dtype=np.float32)
                 pkl_filename = os.path.join(self.datapath, "Points_resized/{}_train/view_{}.dat".format(scan, vid))
                 depth = self.read_depth(depth_filename)
+                depth *= config.DTU_RESCALE_FACTOR
                 mask = self.read_mask(mask_filename)
                 with open(pkl_filename) as f:
                     data = pickle.load(open(pkl_filename, 'rb'), encoding="latin1")
