@@ -154,7 +154,7 @@ class MVSNet(nn.Module):
 
         self.feature = VGG16P2M()
         # self.features_dim = 960# + 191
-        self.features_dim = 8
+        self.features_dim = 120
 
         # self.features_dim = 384
         self.cost_regularization = CostRegNet()
@@ -217,7 +217,7 @@ class MVSNet(nn.Module):
         depth = depth_regression(prob_volume, depth_values=depth_values)
         # add cost aggregated feature
         features[0] = []
-        features[0].append(cost_agg_feature)
+        features[0] = cost_agg_feature
         return {"features": features, "depth":depth}
 
 class VGG16P2M(nn.Module):
@@ -347,16 +347,23 @@ class CostRegNet(nn.Module):
 
     def forward(self, x):
 
+        x_agg = []
         conv0 = self.conv0(x)
         conv2 = self.conv2(self.conv1(conv0))
         conv4 = self.conv4(self.conv3(conv2))
         x = self.conv6(self.conv5(conv4))
+        x_agg.append(x)
+
         x = conv4 + self.conv7(x)
+        x_agg.append(x)
+
         x = conv2 + self.conv9(x)
+        x_agg.append(x)
+
         x = conv0 + self.conv11(x)
+        x_agg.append(x)
         #max pool on aggregated feature
         # b, c, d, h, w = x.shape
-        x_agg = x
         # x_agg = x.view(b, c*d, h, w).contiguous()
         # x_agg =  torch.randn(b, c*d, h, w).cuda()
         # x_agg = self.channelpool(x_agg)  #191, 56, 56
