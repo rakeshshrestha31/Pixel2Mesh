@@ -36,9 +36,9 @@ loss:
     move: 0.033
     normal: 0.00016
     reconst: 0.0
-    depth: 0.0001
+    depth: 1000
 model:
-  align_with_tensorflow: true
+  align_with_tensorflow: false
   backbone: vgg16
   coord_dim: 3
   gconv_activation: true
