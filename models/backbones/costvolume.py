@@ -3,6 +3,86 @@ import torch.nn as nn
 from torch.nn import MaxPool1d
 import torch.nn.functional as F
 
+import config
+
+def project_pixel_coords(x, y, depth_values, src_proj, ref_proj, batch):
+    """project pixel coords (x, y) to another image frame for each possible depth_values"""
+    num_depth = depth_values.shape[1]
+    transform = torch.matmul(src_proj[:, 0], torch.inverse(ref_proj[:, 0]))
+
+    device = x.get_device()
+    # transform the extrinsics from shapenet frame to DTU
+    transform_shapenet_dtu = torch.tensor(config.T_shapenet_dtu, dtype=torch.float32).unsqueeze(0)
+    if device >= 0:
+        transform_shapenet_dtu = transform_shapenet_dtu.cuda(device)
+
+    src_transform = torch.matmul(
+        torch.inverse(transform_shapenet_dtu),
+        torch.matmul(src_proj[:, 0], transform_shapenet_dtu)
+    )
+    ref_transform = torch.matmul(
+        torch.inverse(transform_shapenet_dtu),
+        torch.matmul(ref_proj[:, 0], transform_shapenet_dtu)
+    )
+
+    src_proj_new = src_proj[:, 0].clone()
+    src_proj_new[:, :3, :4] = torch.matmul(src_proj[:, 1, :3, :3], src_transform[:, :3, :4])
+    ref_proj_new = ref_proj[:, 0].clone()
+    ref_proj_new[:, :3, :4] = torch.matmul(ref_proj[:, 1, :3, :3], ref_transform[:, :3, :4])
+    proj = torch.matmul(src_proj_new, torch.inverse(ref_proj_new))
+    rot = proj[:, :3, :3]  # [B,3,3]
+    trans = proj[:, :3, 3:4]  # [B,3,1]
+
+    xyz = torch.stack((x, y, torch.ones_like(x)))  # [3, H*W]
+    xyz = torch.unsqueeze(xyz, 0).repeat(batch, 1, 1)  # [B, 3, H*W]
+    rot_xyz = torch.matmul(rot, xyz)  # [B, 3, H*W]
+    rot_depth_xyz = rot_xyz.unsqueeze(2).repeat(1, 1, num_depth, 1) * depth_values.view(batch, 1, num_depth,
+                                                                                        1)  # [B, 3, Ndepth, H*W]
+    proj_xyz = rot_depth_xyz + trans.view(batch, 3, 1, 1)  # [B, 3, Ndepth, H*W]
+    proj_xy = proj_xyz[:, :2, :, :] / (proj_xyz[:, 2:3, :, :]) # + 0.0001)  # [B, 2, Ndepth, H*W]
+
+    return proj_xy
+
+    # transform = torch.matmul(
+    #     torch.inverse(transform_shapenet_dtu),
+    #     torch.matmul(transform, transform_shapenet_dtu)
+    # )
+    #
+    # rot = transform[:, :3, :3]  # [B,3,3]
+    # trans = transform[:, :3, 3:4]  # [B,3,1]
+    # K_src = src_proj[:, 1, :3, :3]
+    # K_ref = ref_proj[:, 1, :3, :3]
+    #
+    # xy1_ref = torch.stack((x, y, torch.ones_like(x)))  # [3, H*W]
+    # xy1_ref = torch.unsqueeze(xy1_ref, 0).repeat(batch, 1, 1)  # [B, 3, H*W]
+    # uv1_ref = torch.matmul(torch.inverse(K_ref), xy1_ref)  # [B, 3, H*W]
+    # xyz_ref = uv1_ref.unsqueeze(2).repeat(1, 1, num_depth, 1) \
+    #             * depth_values.view(batch, 1, num_depth, 1)   # [B, 3, Ndepth, H*W]
+    #
+    # xyz_ref = xyz_ref.view(batch, 3, -1) # [B, 3, Ndepth*H*W]
+    #
+    # xyz_src = torch.matmul(rot, xyz_ref) + trans.view(batch, 3, 1)  # [B, 3, Ndepth*H*W]
+    # uvd_src = torch.matmul(K_src, xyz_src)
+    #
+    # uv_src = uvd_src[:, :2, :] / (uvd_src[:, 2:3, :]) # [B, 2, Ndepth*H*W
+    # uv_src = uv_src.view(batch, 2, num_depth, -1) # [B, 2, Ndepth, H*W]
+
+    # depth_idx = 29
+    # print('K_ref\n', K_ref, '\n', torch.inverse(K_ref))
+    # print('xy1_ref\n', xy1_ref[0, :, 0], xy1_ref.size())
+    # print('uv1_ref\n', uv1_ref[0, :, 0], uv1_ref.size())
+    # print('xyz_ref\n', xyz_ref.view(batch, 3, num_depth, -1)[0, :, depth_idx, 0], xyz_ref.size())
+    # print('d:', depth_values[0, depth_idx].item())
+    #
+    # print('rot:', rot)
+    # print('trans:', trans)
+    # print('xyz_src\n', xyz_src.view(batch, 3, num_depth, -1)[0, :, depth_idx, 0], xyz_src.size())
+    # print('K_src', K_src, K_src.size())
+    # print('uvd_src\n', uvd_src.view(batch, 3, num_depth, -1)[0, :, depth_idx, 0], uvd_src.size())
+    # print('uv_src', uv_src[0:, :, depth_idx, 0])
+    # exit(0)
+    # return uv_src
+
 
 def homo_warping(src_fea, src_proj, ref_proj, depth_values):
     # src_fea: [B, C, H, W]
@@ -15,21 +95,14 @@ def homo_warping(src_fea, src_proj, ref_proj, depth_values):
     height, width = src_fea.shape[2], src_fea.shape[3]
 
     with torch.no_grad():
-        proj = torch.matmul(src_proj, torch.inverse(ref_proj))
-        rot = proj[:, :3, :3]  # [B,3,3]
-        trans = proj[:, :3, 3:4]  # [B,3,1]
+        # proj = torch.matmul(src_proj, torch.inverse(ref_proj))
 
         y, x = torch.meshgrid([torch.arange(0, height, dtype=torch.float32, device=src_fea.device),
                                torch.arange(0, width, dtype=torch.float32, device=src_fea.device)])
         y, x = y.contiguous(), x.contiguous()
         y, x = y.view(height * width), x.view(height * width)
-        xyz = torch.stack((x, y, torch.ones_like(x)))  # [3, H*W]
-        xyz = torch.unsqueeze(xyz, 0).repeat(batch, 1, 1)  # [B, 3, H*W]
-        rot_xyz = torch.matmul(rot, xyz)  # [B, 3, H*W]
-        rot_depth_xyz = rot_xyz.unsqueeze(2).repeat(1, 1, num_depth, 1) * depth_values.view(batch, 1, num_depth,
-                                                                                            1)  # [B, 3, Ndepth, H*W]
-        proj_xyz = rot_depth_xyz + trans.view(batch, 3, 1, 1)  # [B, 3, Ndepth, H*W]
-        proj_xy = proj_xyz[:, :2, :, :] / (proj_xyz[:, 2:3, :, :] + 0.0001)  # [B, 2, Ndepth, H*W]
+        proj_xy = project_pixel_coords(x, y, depth_values, src_proj, ref_proj, batch)
+
         proj_x_normalized = proj_xy[:, 0, :, :] / ((width - 1) / 2) - 1
         proj_y_normalized = proj_xy[:, 1, :, :] / ((height - 1) / 2) - 1
         proj_xy = torch.stack((proj_x_normalized, proj_y_normalized), dim=3)  # [B, Ndepth, H*W, 2]
@@ -111,16 +184,16 @@ class MVSNet(nn.Module):
         del ref_volume
         for src_fea, src_proj in zip(src_features, src_projs):
             #
-            src_proj[:, 1, :2, :3] = src_proj[:, 1, :2, :3] / 4.
-            ref_proj[:, 1, :2, :3] = ref_proj[:, 1, :2, :3] / 4.
+            # src_proj[:, 1, :2, :3] = src_proj[:, 1, :2, :3] / 2.
+            # ref_proj[:, 1, :2, :3] = ref_proj[:, 1, :2, :3] / 2.
             #
-            src_proj_new = src_proj[:, 0].clone()
-            src_proj_new[:, :3, :4] = torch.matmul(src_proj[:, 1, :3, :3], src_proj[:, 0, :3, :4])
-            ref_proj_new = ref_proj[:, 0].clone()
-            ref_proj_new[:, :3, :4] = torch.matmul(ref_proj[:, 1, :3, :3], ref_proj[:, 0, :3, :4])
+            # src_proj_new = src_proj[:, 0].clone()
+            # src_proj_new[:, :3, :4] = torch.matmul(src_proj[:, 1, :3, :3], src_proj[:, 0, :3, :4])
+            # ref_proj_new = ref_proj[:, 0].clone()
+            # ref_proj_new[:, :3, :4] = torch.matmul(ref_proj[:, 1, :3, :3], ref_proj[:, 0, :3, :4])
             #
             # warpped features
-            warped_volume = homo_warping(src_fea, src_proj_new, ref_proj_new, depth_values)
+            warped_volume = homo_warping(src_fea, src_proj, ref_proj, depth_values)
             if self.training:
                 volume_sum = volume_sum + warped_volume
                 volume_sq_sum = volume_sq_sum + warped_volume ** 2
