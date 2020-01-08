@@ -152,8 +152,9 @@ class MVSNet(nn.Module):
     def __init__(self):
         super(MVSNet, self).__init__()
 
-        self.features_dim = 960 + 191
         self.feature = VGG16P2M()
+        # self.features_dim = 960# + 191
+        self.features_dim = 191
         # self.features_dim = 384
         self.cost_regularization = CostRegNet()
 
@@ -214,6 +215,7 @@ class MVSNet(nn.Module):
         prob_volume = F.softmax(cost_reg, dim=1)
         depth = depth_regression(prob_volume, depth_values=depth_values)
         # add cost aggregated feature
+        features[0] = []
         features[0].append(cost_agg_feature)
         return {"features": features, "depth":depth}
 
