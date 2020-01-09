@@ -24,7 +24,7 @@ CAM_INFO_FORMAT = \
     '{K00:f} {K01:f} {K02:f} \n' \
     '{K10:f} {K11:f} {K12:f} \n' \
     '{K20:f} {K21:f} {K22:f} \n\n' \
-    '{depth_max:f} {depth_min:f}'
+    '{depth_min:f} {depth_interval:f}'
 
 
 def parse_cam_info(cam_info_file):
@@ -44,9 +44,22 @@ def get_cam_transform(cam_info):
         [cam_info['T30'], cam_info['T31'], cam_info['T32'], cam_info['T33']]
     ])
 
+
+def get_intrinsics(cam_info):
+    return np.asarray([
+        [cam_info['K00'], cam_info['K01'], cam_info['K02']],
+        [cam_info['K10'], cam_info['K11'], cam_info['K12']],
+        [cam_info['K20'], cam_info['K21'], cam_info['K22']]
+    ])
+
+
 def update_extrinsics(cam_info, extrinsics):
     for i, j in itertools.product(range(4), range(4)):
         cam_info['T%d%d' % (i, j)] = extrinsics[i, j]
+
+def update_intrinsics(cam_info, intrinsics):
+    for i, j in itertools.product(range(3), range(3)):
+        cam_info['K%d%d' % (i, j)] = intrinsics[i, j]
 
 def process_ply(pcd, input_cam_info,
                 dat_file, output_cam_file, scale, debug):
@@ -82,8 +95,11 @@ def process_ply(pcd, input_cam_info,
         config.T_shapenet_dtu, output_T_cam_world,
         np.linalg.inv(config.T_shapenet_dtu)
     ))
-    output_cam_info = copy.deepcopy(input_cam_info).named
+    output_cam_info = copy.deepcopy(input_cam_info)
     update_extrinsics(output_cam_info, output_T_cam_world)
+    output_cam_info['depth_min'] *= scale
+    output_cam_info['depth_interval'] *= scale
+
     with open(output_cam_file, 'w') as f:
         f.write(CAM_INFO_FORMAT.format(**output_cam_info))
 
@@ -101,16 +117,19 @@ def process_ply(pcd, input_cam_info,
 
 def process_image(input_image_path, output_image_path):
     print("input_image_path:", input_image_path)
+    resized_shape = (config.IMG_SIZE, config.IMG_SIZE)
     input_image = cv2.imread(input_image_path, cv2.IMREAD_UNCHANGED)
     output_image = cv2.resize(
-        input_image, (224, 224), cv2.INTER_AREA
+        input_image, resized_shape, cv2.INTER_AREA
     )
+    resize_factor = [float(i)/j for i, j in zip(output_image.shape[:2], input_image.shape[:2])]
+
     # add alpha channel
     b, g, r = cv2.split(output_image)
     alpha = np.ones(b.shape, dtype=b.dtype) * 255
     output_image = cv2.merge((b, g, r, alpha))
     cv2.imwrite(output_image_path, output_image)
-    return output_image
+    return output_image, resize_factor
 
 def parse_args():
     parser = argparse.ArgumentParser(description='resize DTU image')
@@ -124,11 +143,11 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    # scans_dir = glob.glob(args.rectified_images_dir + '/*')
-    scans_dir = [
-        os.path.join(args.rectified_images_dir, 'scan2'),
-        os.path.join(args.rectified_images_dir, 'scan4')
-    ]
+    scans_dir = glob.glob(args.rectified_images_dir + '/*')
+    # scans_dir = [
+    #     os.path.join(args.rectified_images_dir, 'scan2'),
+    #     os.path.join(args.rectified_images_dir, 'scan4')
+    # ]
 
     for scan_iter in range(len(scans_dir)):
         scan = scans_dir[scan_iter].split('Rectified/scan')[-1].split('_train')[0]
@@ -152,19 +171,26 @@ if __name__ == '__main__':
                 output_rgb_dir = output_rgb_file.split("/rect")[0]
                 os.makedirs(output_rgb_dir, exist_ok=True)
 
-                process_image(rgb_file,output_rgb_file)
+                ouput_image, resize_factor = process_image(rgb_file,output_rgb_file)
             input_cam_file = args.cams_dir + '/train/{:0>8}_cam.txt'.format(file_index)
             output_cam_file = args.cams_dir \
                          + '/train_resized/{:0>8}_cam.txt'.format(file_index)
             os.makedirs(os.path.dirname(output_cam_file), exist_ok=True)
 
-            input_cam_info = parse_cam_info(input_cam_file)
+            input_cam_info = parse_cam_info(input_cam_file).named
+            K = get_intrinsics(input_cam_info)
+
+            # note: the matrix dim 0, dim 1 correspond to y and x image dimensions
+            K[0, :] *= resize_factor[1]
+            K[1, :] *= resize_factor[0]
+
+            update_intrinsics(input_cam_info, K)
             process_ply(
                 copy.deepcopy(pcd), input_cam_info,
                 output_dat_file, output_cam_file, args.rescale_factor, False
             )
         # one in world frame (just for debugging, not used by network)
-        update_extrinsics(input_cam_info.named, np.eye(4))
+        update_extrinsics(input_cam_info, np.eye(4))
         output_dat_file = rgb_file \
             .replace("/Rectified/", "/Points_resized/") \
             .split("/rect")[0]+"/view_world" \
