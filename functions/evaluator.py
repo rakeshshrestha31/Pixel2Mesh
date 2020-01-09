@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from functions.base import CheckpointRunner
+from functions.check_best import CheckBest
 from models.classifier import Classifier
 from models.layers.chamfer_wrapper import ChamferDist
 from models.p2m import P2MModel
@@ -18,6 +19,12 @@ class Evaluator(CheckpointRunner):
 
     def __init__(self, options, logger: Logger, writer, shared_model=None):
         super().__init__(options, logger, writer, training=False, shared_model=shared_model)
+
+        self.check_best_metrics = [
+            CheckBest('cd', 'best_test_loss_chamfer', is_loss=True),
+            CheckBest('f1_tau', 'best_test_f1_tau', is_loss=False),
+            CheckBest('f1_2tau', 'best_test_f1_2tau', is_loss=False)
+        ]
 
     # noinspection PyAttributeOutsideInit
     def init_fn(self, shared_model=None, **kwargs):
@@ -162,12 +169,28 @@ class Evaluator(CheckpointRunner):
             self.evaluate_step_count += 1
             self.total_step_count += 1
 
-        for key, val in self.get_result_summary().items():
+        result_summary = self.get_result_summary()
+        for key, val in result_summary.items():
             scalar = val
             if isinstance(val, AverageMeter):
                 scalar = val.avg
             self.logger.info("Test [%06d] %s: %.6f" % (self.total_step_count, key, scalar))
             self.summary_writer.add_scalar("eval_" + key, scalar, self.total_step_count + 1)
+
+        # save checkpoint if best
+        for check_best in self.check_best_metrics:
+            scalar = result_summary[check_best.key]
+            if isinstance(scalar, AverageMeter):
+                scalar = scalar.avg
+            if check_best.check_best(scalar):
+                self.logger.info("Test Step %06d/%06d (%06d), found best %s: %f" % (
+                    self.evaluate_step_count,
+                    len(self.dataset) // (
+                          self.options.num_gpus * self.options.test.batch_size),
+                    self.total_step_count,
+                    check_best.metric_name, check_best.best,
+                ))
+                self.dump_checkpoint(check_best.metric_name, is_indexed=False)
 
     def average_of_average_meters(self, average_meters):
         s = sum([meter.sum for meter in average_meters])

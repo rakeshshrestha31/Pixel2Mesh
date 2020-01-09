@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 
 from functions.base import CheckpointRunner
 from functions.evaluator import Evaluator
+from functions.check_best import CheckBest
 from models.classifier import Classifier
 from models.losses.classifier import CrossEntropyLoss
 from models.losses.p2m import P2MLoss
@@ -78,6 +79,12 @@ class Trainer(CheckpointRunner):
         # Evaluators
         self.evaluators = [Evaluator(self.options, self.logger, self.summary_writer, shared_model=self.model)]
 
+        self.check_best_metrics = [
+            CheckBest('loss', 'best_train_loss', is_loss=True),
+            CheckBest('loss_chamfer', 'best_train_loss_chamfer', is_loss=True),
+            CheckBest('loss_depth', 'best_train_loss_depth', is_loss=True),
+        ]
+
     def models_dict(self):
         return {'model': self.model}
 
@@ -148,9 +155,20 @@ class Trainer(CheckpointRunner):
                 if self.step_count % self.options.train.summary_steps == 0:
                     self.train_summaries(batch, initial_meshes, *out)
 
+                # save checkpoint only if best
+                for check_best in self.check_best_metrics:
+                    if check_best.check_best(out[1][check_best.key]):
+                        self.logger.info("Epoch %03d, Step %06d/%06d, found best %s: %f'" % (
+                            self.epoch_count, self.step_count,
+                            self.options.train.num_epochs * len(self.dataset) // (
+                                    self.options.train.batch_size * self.options.num_gpus),
+                            check_best.metric_name, check_best.best,
+                        ))
+                        self.dump_checkpoint(check_best.metric_name, is_indexed=False)
+
                 # Save checkpoint every checkpoint_steps steps
                 if self.step_count % self.options.train.checkpoint_steps == 0:
-                    self.dump_checkpoint()
+                    self.dump_checkpoint('regular', is_indexed=True)
                 # duration = time.time() - start_time
                 # print("step %d, duration is %f"%(step, duration))
 

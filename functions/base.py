@@ -55,10 +55,10 @@ class CheckpointRunner(object):
         self.logger.info("Running model initialization...")
         self.init_fn(shared_model=shared_model)
 
+        self.saver = CheckpointSaver(self.logger, checkpoint_dir=str(self.options.checkpoint_dir),
+                                     checkpoint_file=self.options.checkpoint)
         if shared_model is None:
             # checkpoint is loaded if any
-            self.saver = CheckpointSaver(self.logger, checkpoint_dir=str(self.options.checkpoint_dir),
-                                         checkpoint_file=self.options.checkpoint)
             self.init_with_checkpoint()
 
     def load_dataset(self, dataset, training):
@@ -114,7 +114,7 @@ class CheckpointRunner(object):
         if "total_step_count" in checkpoint:
             self.step_count = checkpoint["total_step_count"]
 
-    def dump_checkpoint(self):
+    def dump_checkpoint(self, prefix, is_indexed=False):
         checkpoint = {
             "epoch": self.epoch_count,
             "total_step_count": self.step_count
@@ -130,7 +130,11 @@ class CheckpointRunner(object):
         if self.optimizers_dict() is not None:
             for optimizer_name, optimizer in self.optimizers_dict().items():
                 checkpoint[optimizer_name] = optimizer.state_dict()
-        self.saver.save_checkpoint(checkpoint, "%06d_%06d" % (self.step_count, self.epoch_count))
+        if is_indexed:
+            filename = "%s_%06d_%06d" % (prefix, self.step_count, self.epoch_count)
+        else:
+            filename = prefix
+        self.saver.save_checkpoint(checkpoint, filename)
 
     @property
     def time_elapsed(self):
