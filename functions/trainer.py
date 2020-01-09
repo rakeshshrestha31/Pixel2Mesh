@@ -80,9 +80,9 @@ class Trainer(CheckpointRunner):
         self.evaluators = [Evaluator(self.options, self.logger, self.summary_writer, shared_model=self.model)]
 
         self.check_best_metrics = [
-            CheckBest('loss', 'best_train_loss', is_loss=True),
-            CheckBest('loss_chamfer', 'best_train_loss_chamfer', is_loss=True),
-            CheckBest('loss_depth', 'best_train_loss_depth', is_loss=True),
+            # CheckBest('loss', 'best_train_loss', is_loss=True),
+            # CheckBest('loss_chamfer', 'best_train_loss_chamfer', is_loss=True),
+            # CheckBest('loss_depth', 'best_train_loss_depth', is_loss=True),
         ]
 
     def models_dict(self):
