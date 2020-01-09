@@ -238,18 +238,18 @@ class VGG16P2M(nn.Module):
         self.conv2_2 = nn.Conv2d(64, 64, 3, stride=1, padding=1)
         self.conv2_3 = nn.Conv2d(64, 64, 3, stride=1, padding=1)
 
-        self.conv3_1 = nn.Conv2d(64, 128, 3, stride=2, padding=1)  # 56 -> 28
-        self.conv3_2 = nn.Conv2d(128, 128, 3, stride=1, padding=1)
-        self.conv3_3 = nn.Conv2d(128, 128, 3, stride=1, padding=1)
-
-        self.conv4_1 = nn.Conv2d(128, 256, 5, stride=2, padding=2)  # 28 -> 14
-        self.conv4_2 = nn.Conv2d(256, 256, 3, stride=1, padding=1)
-        self.conv4_3 = nn.Conv2d(256, 256, 3, stride=1, padding=1)
-
-        self.conv5_1 = nn.Conv2d(256, 512, 5, stride=2, padding=2)  # 14 -> 7
-        self.conv5_2 = nn.Conv2d(512, 512, 3, stride=1, padding=1)
-        self.conv5_3 = nn.Conv2d(512, 512, 3, stride=1, padding=1)
-        self.conv5_4 = nn.Conv2d(512, 512, 3, stride=1, padding=1)
+        # self.conv3_1 = nn.Conv2d(64, 128, 3, stride=2, padding=1)  # 56 -> 28
+        # self.conv3_2 = nn.Conv2d(128, 128, 3, stride=1, padding=1)
+        # self.conv3_3 = nn.Conv2d(128, 128, 3, stride=1, padding=1)
+        #
+        # self.conv4_1 = nn.Conv2d(128, 256, 5, stride=2, padding=2)  # 28 -> 14
+        # self.conv4_2 = nn.Conv2d(256, 256, 3, stride=1, padding=1)
+        # self.conv4_3 = nn.Conv2d(256, 256, 3, stride=1, padding=1)
+        #
+        # self.conv5_1 = nn.Conv2d(256, 512, 5, stride=2, padding=2)  # 14 -> 7
+        # self.conv5_2 = nn.Conv2d(512, 512, 3, stride=1, padding=1)
+        # self.conv5_3 = nn.Conv2d(512, 512, 3, stride=1, padding=1)
+        # self.conv5_4 = nn.Conv2d(512, 512, 3, stride=1, padding=1)
 
         if "vgg16p2m" in config.PRETRAINED_WEIGHTS_PATH and pretrained:
             state_dict = torch.load(config.PRETRAINED_WEIGHTS_PATH["vgg16p2m"])
@@ -285,23 +285,23 @@ class VGG16P2M(nn.Module):
         img = F.relu(self.conv2_3(img))
         img2 = img
 
-        img = F.relu(self.conv3_1(img))
-        img = F.relu(self.conv3_2(img))
-        img = F.relu(self.conv3_3(img))
-        img3 = img
+        # img = F.relu(self.conv3_1(img))
+        # img = F.relu(self.conv3_2(img))
+        # img = F.relu(self.conv3_3(img))
+        # img3 = img
+        #
+        # img = F.relu(self.conv4_1(img))
+        # img = F.relu(self.conv4_2(img))
+        # img = F.relu(self.conv4_3(img))
+        # img4 = img
+        #
+        # img = F.relu(self.conv5_1(img))
+        # img = F.relu(self.conv5_2(img))
+        # img = F.relu(self.conv5_3(img))
+        # img = F.relu(self.conv5_4(img))
+        # img5 = img
 
-        img = F.relu(self.conv4_1(img))
-        img = F.relu(self.conv4_2(img))
-        img = F.relu(self.conv4_3(img))
-        img4 = img
-
-        img = F.relu(self.conv5_1(img))
-        img = F.relu(self.conv5_2(img))
-        img = F.relu(self.conv5_3(img))
-        img = F.relu(self.conv5_4(img))
-        img5 = img
-
-        return [img2, img3, img4, img5]
+        return [img2]
 
 
 class ConvBnReLU3D(nn.Module):
