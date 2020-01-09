@@ -74,6 +74,7 @@ options.loss.weights.chamfer = [1., 1., 1.]
 options.loss.weights.chamfer_opposite = 1.
 options.loss.weights.reconst = 0.
 options.loss.weights.depth = 1e-4
+options.loss.only_depth_training = False
 
 options.train = edict()
 options.train.num_epochs = 200
@@ -173,6 +174,8 @@ def reset_options(options, args, phase='train'):
         options.model.backbone = args.backbone
     if hasattr(args, "num_views") and args.num_views:
         options.dataset.num_views = args.num_views
+    if hasattr(args, "only_depth_training") and args.only_depth_training is not None:
+        options.loss.only_depth_training = args.only_depth_training
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
         options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu.txt"
@@ -208,6 +211,9 @@ def reset_options(options, args, phase='train'):
 
     print('=> creating summary writer')
     writer = SummaryWriter(options.summary_dir)
+
+    if options.loss.only_depth_training:
+        print('=> training only depth')
 
     return logger, writer
 

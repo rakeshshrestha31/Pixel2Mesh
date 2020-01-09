@@ -131,12 +131,15 @@ class P2MLoss(nn.Module):
 
         depth_loss += self.depth_loss(gt_depth, pred_depth, mask)
         #
-        loss = chamfer_loss + image_loss * self.options.weights.reconst + \
-               self.options.weights.laplace * lap_loss + \
-               self.options.weights.move * move_loss + \
-               self.options.weights.edge * edge_loss + \
-               self.options.weights.normal * normal_loss + \
-               self.options.weights.depth * depth_loss
+        if self.options.only_depth_training:
+            loss = depth_loss
+        else:
+            loss = chamfer_loss + image_loss * self.options.weights.reconst + \
+                   self.options.weights.laplace * lap_loss + \
+                   self.options.weights.move * move_loss + \
+                   self.options.weights.edge * edge_loss + \
+                   self.options.weights.normal * normal_loss + \
+                   self.options.weights.depth * depth_loss
 
         # loss = depth_loss
 
