@@ -1,5 +1,5 @@
 checkpoint: null
-checkpoint_dir: /tmp/checkpoints
+checkpoint_dir: checkpoints
 dataset:
   camera_c:
   - 116.061
