@@ -48,15 +48,9 @@ def update_extrinsics(cam_info, extrinsics):
     for i, j in itertools.product(range(4), range(4)):
         cam_info['T%d%d' % (i, j)] = extrinsics[i, j]
 
-def process_ply(ply_file, input_cam_info,
+def process_ply(pcd, input_cam_info,
                 dat_file, output_cam_file, scale, debug):
     T_cam_world = get_cam_transform(input_cam_info)
-    pcd = o3d.io.read_point_cloud(ply_file)
-    # downsample the cloud
-    # o3d.visualization.draw_geometries([pcd])
-    pcd = pcd.voxel_down_sample(voxel_size=config.DTU_VOXEL_SIZE)
-    # o3d.visualization.draw_geometries([pcd])
-
 
     # transform point cloud to shapenet frame and correct scale
     transformation = np.linalg.multi_dot((config.T_shapenet_dtu, T_cam_world))
@@ -139,6 +133,12 @@ if __name__ == '__main__':
     for scan_iter in range(len(scans_dir)):
         scan = scans_dir[scan_iter].split('Rectified/scan')[-1].split('_train')[0]
         ply_file = (args.points_dir + "/stl{:0>3}_total.ply").format(scan)
+        pcd = o3d.io.read_point_cloud(ply_file)
+        # downsample the cloud
+        # o3d.visualization.draw_geometries([pcd])
+        pcd = pcd.voxel_down_sample(voxel_size=config.DTU_VOXEL_SIZE)
+        # o3d.visualization.draw_geometries([pcd])
+
         for file_index in range(0, 49):
             for light_cond in range(0, 7):
                 rgb_file = (args.rectified_images_dir + "/scan{}_train/rect_{:0>3}_{}_r5000.png").format(
@@ -160,8 +160,8 @@ if __name__ == '__main__':
 
             input_cam_info = parse_cam_info(input_cam_file)
             process_ply(
-                ply_file, input_cam_info,
-                output_dat_file, output_cam_file, args.rescale_factor, True # False
+                copy.deepcopy(pcd), input_cam_info,
+                output_dat_file, output_cam_file, args.rescale_factor, False
             )
         # one in world frame (just for debugging, not used by network)
         update_extrinsics(input_cam_info.named, np.eye(4))
@@ -170,10 +170,10 @@ if __name__ == '__main__':
             .split("/rect")[0]+"/view_world" \
             .format(file_index)+".dat"
         process_ply(
-            ply_file, input_cam_info,
+            copy.deepcopy(pcd), input_cam_info,
             output_dat_file,
             os.path.join(args.cams_dir, 'train_resized', 'world.txt'),
-            args.rescale_factor, True # False
+            args.rescale_factor, False
         )
 
 
