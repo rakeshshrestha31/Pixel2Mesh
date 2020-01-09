@@ -51,7 +51,7 @@ class Evaluator(CheckpointRunner):
                 # create model
                 self.model = P2MModel(self.options.model,
                                       self.options.dataset.camera_f, self.options.dataset.camera_c,
-                                      self.options.dataset.mesh_pos)
+                                      self.options.dataset.mesh_pos, self.options.train.freeze_cv)
             elif self.options.model.name == "classifier":
                 self.model = Classifier(self.options.model, self.options.dataset.num_classes)
             else:

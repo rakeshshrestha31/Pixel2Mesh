@@ -30,9 +30,11 @@ def parse_args():
     parser.add_argument('--debug_scan2', default=True, type=bool)
     parser.add_argument('--num_views', default=3, help='num_views', type=int)
     parser.add_argument('--seed', default=3, help='seed', type=int)
+    parser.add_argument('--freeze-cv', dest='freeze_cv', action='store_true')
     parser.add_argument('--only-depth-training', dest='only_depth_training', action='store_true')
     parser.add_argument('--all-loss-training', dest='only_depth_training', action='store_false')
     parser.set_defaults(only_depth_training=False)
+    parser.set_defaults(freeze_cv=False)
 
     args = parser.parse_args()
 

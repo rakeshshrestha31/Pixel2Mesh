@@ -12,15 +12,15 @@ from models.layers.gprojection_xyz import GProjection as GProjectionXYZ
 
 class P2MModel(nn.Module):
 
-    def __init__(self, options, camera_f, camera_c, mesh_pos):
+    def __init__(self, options, camera_f, camera_c, mesh_pos, freeze_cv=False):
         super(P2MModel, self).__init__()
-
+        self.freeze_cv = freeze_cv
         self.hidden_dim = options.hidden_dim
         self.coord_dim = options.coord_dim
         self.last_hidden_dim = options.last_hidden_dim
         self.gconv_activation = options.gconv_activation
 
-        self.nn_encoder, self.nn_decoder = get_backbone(options)
+        self.nn_encoder, self.nn_decoder = get_backbone(options, self.freeze_cv)
         self.features_dim = self.nn_encoder.features_dim + self.coord_dim
 
         self.gcns = nn.ModuleList([

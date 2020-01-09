@@ -84,6 +84,7 @@ options.train.checkpoint_steps = 100000
 options.train.test_epochs = 5
 options.train.use_augmentation = True
 options.train.shuffle = True
+options.train.freeze_cv = False
 
 options.test = edict()
 options.test.dataset = []
@@ -176,6 +177,8 @@ def reset_options(options, args, phase='train'):
         options.dataset.num_views = args.num_views
     if hasattr(args, "only_depth_training") and args.only_depth_training is not None:
         options.loss.only_depth_training = args.only_depth_training
+    if hasattr(args, "freeze_cv") and args.freeze_cv is not None:
+        options.train.freeze_cv = args.freeze_cv
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
         options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu.txt"

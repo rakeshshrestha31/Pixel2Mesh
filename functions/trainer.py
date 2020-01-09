@@ -37,7 +37,7 @@ class Trainer(CheckpointRunner):
                 # create model
                 self.model = P2MModel(self.options.model,
                                       self.options.dataset.camera_f, self.options.dataset.camera_c,
-                                      self.options.dataset.mesh_pos)
+                                      self.options.dataset.mesh_pos, self.options.train.freeze_cv)
             elif self.options.model.name == "classifier":
                 self.model = Classifier(self.options.model, self.options.dataset.num_classes)
             else:
@@ -45,16 +45,17 @@ class Trainer(CheckpointRunner):
             self.model = torch.nn.DataParallel(self.model, device_ids=self.gpus).cuda()
 
         # Setup a joint optimizer for the 2 models
+        params = filter(lambda p: p.requires_grad, self.model.parameters())
         if self.options.optim.name == "adam":
             self.optimizer = torch.optim.Adam(
-                params=list(self.model.parameters()),
+                params=list(params),
                 lr=self.options.optim.lr,
                 betas=(self.options.optim.adam_beta1, 0.999),
                 weight_decay=self.options.optim.wd
             )
         elif self.options.optim.name == "sgd":
             self.optimizer = torch.optim.SGD(
-                params=list(self.model.parameters()),
+                params=list(params),
                 lr=self.options.optim.lr,
                 momentum=self.options.optim.sgd_momentum,
                 weight_decay=self.options.optim.wd

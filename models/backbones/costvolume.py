@@ -149,9 +149,10 @@ class FeatureNet(nn.Module):
         return x
 
 class MVSNet(nn.Module):
-    def __init__(self):
+    def __init__(self, freeze_cv):
         super(MVSNet, self).__init__()
 
+        self.freeze_cv = freeze_cv
         self.feature = VGG16P2M()
         # self.features_dim = 960# + 191
         self.features_dim = 120
@@ -159,8 +160,14 @@ class MVSNet(nn.Module):
         # self.features_dim = 384
         self.cost_regularization = CostRegNet()
 
+        for param in self.parameters():
+            param.requires_grad = not self.freeze_cv
+        print("==> cost volume weight require_grad is:", not self.freeze_cv)
+
+
 
     def forward(self, imgs, proj_matrices, depth_values=None):
+
         # imgs = torch.unbind(imgs, 1)
         # proj_matrices = torch.unbind(proj_matrices, 1)
         # assert len(imgs) == len(proj_matrices), "Different number of images and projection matrices"
