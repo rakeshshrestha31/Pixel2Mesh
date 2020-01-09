@@ -80,7 +80,7 @@ class Evaluator(CheckpointRunner):
         # calculate accurate chamfer distance; ground truth points with different lengths;
         # therefore cannot be batched
         batch_size = len(pred_vertices)
-        pred_length = pred_vertices[0].size(0)
+        pred_length = pred_vertices[0].size(1)
         for i in range(batch_size):
             gt_length = gt_points[i].size(0)
             label = labels[i].cpu().item()
