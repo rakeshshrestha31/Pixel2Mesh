@@ -103,7 +103,6 @@ class P2MModel(nn.Module):
                 batch_from_list(ref_feature, batch_idx),
                 init_pts[batch_idx],
                 depth_values
-
             )
             # x1 shape is torch.Size([16, 156, 3]), x_h
             x1, x_hidden = self.gcns[0](x, ellipsoids[batch_idx].adj_mat[0])
@@ -123,6 +122,7 @@ class P2MModel(nn.Module):
 
             # after deformation 2
             x2, x_hidden = self.gcns[1](x, ellipsoids[batch_idx].adj_mat[1])
+            x2 = x2 + x1_up
 
             # before deformation 3
             x2_up = self.unpooling[1](x2, ellipsoids[batch_idx].unpool_idx[1])
@@ -144,6 +144,7 @@ class P2MModel(nn.Module):
                 x3 = F.relu(x3)
             # after deformation 3
             x3 = self.gconv(x3, ellipsoids[batch_idx].adj_mat[2])
+            x3 = x3 + x2_up
 
             x1s.append(x1)
             x2s.append(x2)
