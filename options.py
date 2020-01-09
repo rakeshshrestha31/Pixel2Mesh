@@ -74,6 +74,7 @@ options.loss.weights.chamfer_opposite = 1.
 options.loss.weights.reconst = 0.
 options.loss.weights.depth = 1e-4
 options.loss.only_depth_training = False
+options.loss.num_chamfer_upsample = 4000
 
 options.train = edict()
 options.train.num_epochs = 200
@@ -84,6 +85,7 @@ options.train.test_epochs = 5
 options.train.use_augmentation = True
 options.train.shuffle = True
 options.train.freeze_cv = False
+options.train.upsampled_chamfer_loss = False
 
 options.test = edict()
 options.test.dataset = []
@@ -91,6 +93,7 @@ options.test.summary_steps = 20
 options.test.batch_size = 32
 options.test.shuffle = False
 options.test.weighted_mean = False
+options.test.upsampled_chamfer_loss = False
 
 options.optim = edict()
 options.optim.name = "adam"
@@ -186,6 +189,10 @@ def reset_options(options, args, phase='train'):
         options.optim.lr_factor = args.lr_factor
     if hasattr(args, "lr_step") and args.lr_step is not None:
         options.optim.lr_step = args.lr_step
+    if hasattr(args, "train_upsampled_chamfer_loss") and args.train_upsampled_chamfer_loss is not None:
+        options.train.upsampled_chamfer_loss = args.train_upsampled_chamfer_loss
+    if hasattr(args, "test_upsampled_chamfer_loss") and args.test_upsampled_chamfer_loss is not None:
+        options.test.upsampled_chamfer_loss = args.test_upsampled_chamfer_loss
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
         # options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"
