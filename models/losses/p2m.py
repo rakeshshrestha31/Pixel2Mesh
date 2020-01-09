@@ -73,7 +73,8 @@ class P2MLoss(nn.Module):
         rect_loss = F.binary_cross_entropy(pred_img, gt_img)
         return rect_loss
 
-    def depth_loss(self, depth_gt, depth_est, mask):
+    @staticmethod
+    def depth_loss(depth_gt, depth_est, mask):
         mask = mask > 0.5
         return F.smooth_l1_loss(depth_est[mask], depth_gt[mask], size_average=True)
 

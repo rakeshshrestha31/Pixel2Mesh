@@ -10,6 +10,7 @@ from functions.check_best import CheckBest
 from models.classifier import Classifier
 from models.layers.chamfer_wrapper import ChamferDist
 from models.p2m import P2MModel
+from models.losses.p2m import P2MLoss
 from utils.average_meter import AverageMeter
 from utils.mesh import Ellipsoid
 from utils.vis.renderer import MeshRenderer
@@ -22,6 +23,7 @@ class Evaluator(CheckpointRunner):
 
         self.check_best_metrics = [
             CheckBest('cd', 'best_test_loss_chamfer', is_loss=True),
+            CheckBest('depth_loss', 'best_test_loss_depth', is_loss=True),
             CheckBest('f1_tau', 'best_test_f1_tau', is_loss=False),
             CheckBest('f1_2tau', 'best_test_f1_2tau', is_loss=False)
         ]
@@ -67,6 +69,12 @@ class Evaluator(CheckpointRunner):
         recall = np.sum(dis_to_gt < thresh) / gt_length
         prec = np.sum(dis_to_pred < thresh) / pred_length
         return 2 * prec * recall / (prec + recall + 1e-8)
+
+    def evaluate_depth_loss(self, pred_depth, gt_depth, mask, labels):
+        batch_size = pred_depth.size(0)
+        for i in range(batch_size):
+            label = labels[i].cpu().item()
+            self.depth_loss[label].update(P2MLoss.depth_loss(gt_depth, pred_depth, mask))
 
     def evaluate_chamfer_and_f1(self, pred_vertices, gt_points, labels):
         # calculate accurate chamfer distance; ground truth points with different lengths;
@@ -122,6 +130,8 @@ class Evaluator(CheckpointRunner):
                 if isinstance(gt_points, list):
                     gt_points = [pts.cuda() for pts in gt_points]
                 self.evaluate_chamfer_and_f1(pred_vertices, gt_points, input_batch["labels"])
+                self.evaluate_depth_loss(out["depth"], input_batch["depth"],
+                                         input_batch["mask"], input_batch["labels"])
             elif self.options.model.name == "classifier":
                 self.evaluate_accuracy(out, input_batch["labels"])
 
@@ -145,6 +155,7 @@ class Evaluator(CheckpointRunner):
             self.chamfer_distance = [AverageMeter() for _ in range(self.num_classes)]
             self.f1_tau = [AverageMeter() for _ in range(self.num_classes)]
             self.f1_2tau = [AverageMeter() for _ in range(self.num_classes)]
+            self.depth_loss = [AverageMeter() for _ in range(self.num_classes)]
         elif self.options.model.name == "classifier":
             self.acc_1 = AverageMeter()
             self.acc_5 = AverageMeter()
@@ -208,6 +219,7 @@ class Evaluator(CheckpointRunner):
         if self.options.model.name == "pixel2mesh":
             return {
                 "cd": self.average_of_average_meters(self.chamfer_distance),
+                "depth_loss": self.average_of_average_meters(self.depth_loss),
                 "f1_tau": self.average_of_average_meters(self.f1_tau),
                 "f1_2tau": self.average_of_average_meters(self.f1_2tau),
             }
