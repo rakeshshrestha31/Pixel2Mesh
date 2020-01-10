@@ -27,12 +27,12 @@ def parse_args():
     parser.add_argument('--name', default='debug', type=str)
     parser.add_argument('--dataset', default='dtu', type=str)
     parser.add_argument('--backbone', default='vgg16', type=str)
-    parser.add_argument('--debug_scan2', default=True, type=bool)
     parser.add_argument('--num_views', default=3, help='num_views', type=int)
     parser.add_argument('--seed', default=3, help='seed', type=int)
     parser.add_argument('--freeze-cv', dest='freeze_cv', action='store_true')
     parser.add_argument('--only-depth-training', dest='only_depth_training', action='store_true')
     parser.add_argument('--all-loss-training', dest='only_depth_training', action='store_false')
+    parser.add_argument('--depth-loss-weight', default=1000, help='depth loss weight', type=float)
     parser.set_defaults(only_depth_training=False)
     parser.set_defaults(freeze_cv=False)
 

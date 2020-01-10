@@ -13,7 +13,7 @@ from utils.mesh import Ellipsoid
 
 # the DTU dataset preprocessed by Yao Yao (only for training)
 class MVSDataset(BaseDataset):
-    def __init__(self, datapath, listfile, mode, nviews, normalization, debug_scan2=False, ndepths=48, depth_interals_ratio=4, interval_scale=1.06, mesh_pos=[0., 0., 0]):
+    def __init__(self, datapath, listfile, mode, nviews, normalization, ndepths=48, depth_interals_ratio=4, interval_scale=1.06, mesh_pos=[0., 0., 0]):
         super(MVSDataset, self).__init__()
         self.datapath = datapath
         self.listfile = listfile
@@ -22,7 +22,6 @@ class MVSDataset(BaseDataset):
         self.ndepths = ndepths
         self.interval_scale = interval_scale
         self.normalization = normalization
-        self.debug_scan2 = debug_scan2
         self.mesh_pos = mesh_pos
         self.depth_interals_ratio = depth_interals_ratio
 

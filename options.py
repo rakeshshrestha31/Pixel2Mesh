@@ -38,7 +38,6 @@ options.dataset.normalization = True
 options.dataset.num_classes = 13
 options.dataset.num_views = 1
 options.dataset.proj_matrix = None
-options.dataset.debug_scan2 = False
 
 options.dataset.shapenet = edict()
 options.dataset.shapenet.num_points = 3000
@@ -179,15 +178,14 @@ def reset_options(options, args, phase='train'):
         options.loss.only_depth_training = args.only_depth_training
     if hasattr(args, "freeze_cv") and args.freeze_cv is not None:
         options.train.freeze_cv = args.freeze_cv
+    if hasattr(args, "depth_loss_weight") and args.depth_loss_weight is not None:
+        options.loss.weights.depth = args.depth_loss_weight
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
-        options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu.txt"
-        options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu.txt"
-        options.dataset.debug_scan2 = args.debug_scan2
-        # options.dataset.proj_matrix =
-        if options.dataset.debug_scan2:
-            options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"
-            options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu_scan4.txt"
+        # options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"
+        # options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu_scan4.txt"
+        options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_10scans.txt"
+        options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu_1scan.txt"
 
     options.name = args.name
 
