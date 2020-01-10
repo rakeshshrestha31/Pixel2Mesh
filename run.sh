@@ -10,10 +10,14 @@ else
     cuda_visible_devices=$1
 fi
 
-CUDA_VISIBLE_DEVICES=${cuda_visible_devices} python entrypoint_train.py --name ${name} --version ${version} \
-    --options ${options} --backbone ${backbone}  --num-epochs 50 --only-depth-training
+CUDA_VISIBLE_DEVICES=${cuda_visible_devices} python entrypoint_train.py --name ${name} --version "${version}_step1" \
+    --options ${options} --backbone ${backbone}  --num-epochs 5 --depth-loss-weight 1000 --only-depth-training
 
-printf "Done training depth only\n\n\n\n"
-CUDA_VISIBLE_DEVICES=${cuda_visible_devices}  python entrypoint_train.py --name ${name} --version ${version} \
-    --options ${options} --backbone costvolume  --num-epochs 50 \
-    --checkpoint "checkpoints/${name}/${version}/best_test_loss_depth.pt"
+printf "\n\n\n\nDone training depth only\n\n\n\n"
+
+mkdir -p "checkpoints/${name}/${version}_step2"
+cp "checkpoints/${name}/${version}_step1/best_test_loss_depth.pt" "checkpoints/${name}/${version}_step2/"
+
+CUDA_VISIBLE_DEVICES=${cuda_visible_devices}  python entrypoint_train.py --name ${name} --version "${version}_step2" \
+    --options ${options} --backbone costvolume  --num-epochs 100  --depth-loss-weight 10 \
+    --checkpoint "checkpoints/${name}/${version}_step2/best_test_loss_depth.pt"
