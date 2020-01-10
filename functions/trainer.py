@@ -135,6 +135,9 @@ class Trainer(CheckpointRunner):
             self.losses.reset()
 
             # self.test()
+            # Run validation every test_epochs
+            if self.epoch_count % self.options.train.test_epochs == 0:
+                self.test()
 
             # Iterate over all batches in an epoch
             for step, batch in enumerate(train_data_loader):
@@ -176,12 +179,10 @@ class Trainer(CheckpointRunner):
             # save checkpoint after each epoch
             # self.dump_checkpoint()
 
-            # Run validation every test_epochs
-            if self.epoch_count % self.options.train.test_epochs == 0:
-                self.test()
-
             # lr scheduler step
             self.lr_scheduler.step()
+
+        self.test()
 
     def train_summaries(self, input_batch, initial_meshes, out_summary, loss_summary):
         if self.renderer is not None:
