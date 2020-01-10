@@ -203,11 +203,13 @@ class Trainer(CheckpointRunner):
             self.summary_writer.add_scalar(k, v, self.step_count)
 
         # Save results to log
-        self.logger.info("Epoch %03d, Step %06d/%06d, Time elapsed %s, Loss %.9f (%.9f)" % (
-            self.epoch_count, self.step_count,
-            self.options.train.num_epochs * len(self.dataset) // (
-                        self.options.train.batch_size * self.options.num_gpus),
-            self.time_elapsed, self.losses.val, self.losses.avg))
+        self.logger.info(
+            "Epoch %03d, Step %06d/%06d, Time elapsed %s, Loss %.9f (%.9f), loss_chamfer: (%.9f), loss_depth: (%.9f)" % (
+                self.epoch_count, self.step_count,
+                self.options.train.num_epochs * len(self.dataset) // (
+                            self.options.train.batch_size * self.options.num_gpus),
+                self.time_elapsed, self.losses.val, self.losses.avg,
+                loss_summary['loss_chamfer'], loss_summary['loss_depth']))
 
     def test(self):
         for evaluator in self.evaluators:
