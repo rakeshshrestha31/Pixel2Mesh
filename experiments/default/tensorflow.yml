@@ -73,6 +73,6 @@ train:
   num_epochs: 1000
   shuffle: true
   summary_steps: 50 #1
-  test_epochs: 5
+  test_epochs: 1
   use_augmentation: true
 version: null
