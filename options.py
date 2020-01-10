@@ -180,6 +180,12 @@ def reset_options(options, args, phase='train'):
         options.train.freeze_cv = args.freeze_cv
     if hasattr(args, "depth_loss_weight") and args.depth_loss_weight is not None:
         options.loss.weights.depth = args.depth_loss_weight
+    if hasattr(args, "lr") and args.lr is not None:
+        options.optim.lr = args.lr
+    if hasattr(args, "lr_factor") and args.lr_factor is not None:
+        options.optim.lr_factor = args.lr_factor
+    if hasattr(args, "lr_step") and args.lr_step is not None:
+        options.optim.lr_step = args.lr_step
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
         # options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"
