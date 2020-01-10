@@ -12,13 +12,12 @@ class CheckpointSaver(object):
         if checkpoint_file is not None:
             if not os.path.exists(checkpoint_file):
                 raise ValueError("Checkpoint file [%s] does not exist!" % checkpoint_file)
-            self.save_dir = os.path.dirname(os.path.abspath(checkpoint_file))
             self.checkpoint_file = os.path.abspath(checkpoint_file)
-            return
         if checkpoint_dir is None:
             raise ValueError("Checkpoint directory must be not None in case file is not provided!")
         self.save_dir = os.path.abspath(checkpoint_dir)
-        self.checkpoint_file = self.get_latest_checkpoint()
+        if not hasattr(self, "checkpoint_file"):
+            self.checkpoint_file = self.get_latest_checkpoint()
 
     def load_checkpoint(self):
         if self.checkpoint_file is None:

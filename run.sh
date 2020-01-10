@@ -15,9 +15,6 @@ CUDA_VISIBLE_DEVICES=${cuda_visible_devices} python entrypoint_train.py --name $
 
 printf "\n\n\n\nDone training depth only\n\n\n\n"
 
-mkdir -p "checkpoints/${name}/${version}_step2"
-cp "checkpoints/${name}/${version}_step1/best_test_loss_depth.pt" "checkpoints/${name}/${version}_step2/"
-
 CUDA_VISIBLE_DEVICES=${cuda_visible_devices}  python entrypoint_train.py --name ${name} --version "${version}_step2" \
     --options ${options} --backbone costvolume  --num-epochs 100  --depth-loss-weight 10 \
-    --checkpoint "checkpoints/${name}/${version}_step2/best_test_loss_depth.pt"
+    --checkpoint "checkpoints/${name}/${version}_step1/best_test_loss_depth.pt"
