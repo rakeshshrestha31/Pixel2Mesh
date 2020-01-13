@@ -71,7 +71,7 @@ class CheckpointRunner(object):
         elif dataset.name == "imagenet":
             return ImageNet(config.IMAGENET_ROOT, "train" if training else "val")
         if dataset.name == "dtu":
-            return MVSDataset(config.SHAPENET_ROOT+'/data_tf', dataset.train_list if training else dataset.test_list, "train" if training else "val", dataset.num_views, dataset.normalization,)
+            return MVSDataset(config.SHAPENET_ROOT+'/data_tf', dataset.train_list if training else dataset.test_list, "train" if training else "val", dataset.num_views, dataset.normalization, options=self.options)
 
         raise NotImplementedError("Unsupported dataset")
 

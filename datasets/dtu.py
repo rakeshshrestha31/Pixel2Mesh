@@ -13,7 +13,7 @@ from utils.mesh import Ellipsoid
 
 # the DTU dataset preprocessed by Yao Yao (only for training)
 class MVSDataset(BaseDataset):
-    def __init__(self, datapath, listfile, mode, nviews, normalization, ndepths=48, depth_interals_ratio=4, interval_scale=1.06, mesh_pos=[0., 0., 0]):
+    def __init__(self, datapath, listfile, mode, nviews, normalization, ndepths=48, depth_interals_ratio=4, interval_scale=1.06, mesh_pos=[0., 0., 0], options=None):
         super(MVSDataset, self).__init__()
         self.datapath = datapath
         self.listfile = listfile
@@ -27,6 +27,11 @@ class MVSDataset(BaseDataset):
 
         assert self.mode in ["train", "val", "test"]
         self.metas = self.build_list()
+        self.intrinsics = np.eye(3, 3, dtype=np.float32)
+        # the intrinsics here are for images of size (h/4, w/4)
+        # hence they are scale by a factor of 4
+        self.intrinsics[:2, :2] = np.diag(options.dataset.camera_f) / 4.0
+        self.intrinsics[:2, 2] = np.array(options.dataset.camera_c).reshape((2,)) / 4.0
 
         # if self.debug_scan2:
         #     self.cache = {}
@@ -68,7 +73,7 @@ class MVSDataset(BaseDataset):
         # extrinsics: line [1,5), 4x4 matrix
         extrinsics = np.fromstring(' '.join(lines[1:5]), dtype=np.float32, sep=' ').reshape((4, 4))
         # intrinsics: line [7-10), 3x3 matrix
-        intrinsics = np.fromstring(' '.join(lines[7:10]), dtype=np.float32, sep=' ').reshape((3, 3))
+        intrinsics = self.intrinsics #np.fromstring(' '.join(lines[7:10]), dtype=np.float32, sep=' ').reshape((3, 3))
         # depth_min & depth_interval: line 11
         depth_min = float(lines[11].split()[0])
         depth_interval = float(lines[11].split()[1]) * self.interval_scale * self.depth_interals_ratio
