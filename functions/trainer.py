@@ -177,7 +177,7 @@ class Trainer(CheckpointRunner):
                 # print("step %d, duration is %f"%(step, duration))
 
             # save checkpoint after each epoch
-            # self.dump_checkpoint()
+            self.dump_checkpoint('latest', False)
 
             # lr scheduler step
             self.lr_scheduler.step()
