@@ -45,6 +45,9 @@ class P2MModel(nn.Module):
                                       tensorflow_compatible=options.align_with_tensorflow)
 
         self.gconv = GConv(in_features=self.last_hidden_dim, out_features=self.coord_dim)
+        self.gconv1 = GConv(in_features=6, out_features=3)
+        self.gconv2 = GConv(in_features=6, out_features=3)
+        self.gconv3 = GConv(in_features=6, out_features=3)
 
     def src2ref(self, pts, ref_proj, src_proj):
         with torch.no_grad():
@@ -106,7 +109,8 @@ class P2MModel(nn.Module):
             )
             # x1 shape is torch.Size([16, 156, 3]), x_h
             x1, x_hidden = self.gcns[0](x, ellipsoids[batch_idx].adj_mat[0])
-            x1 = x1 + init_pts[batch_idx]
+            x1 = self.gconv1(torch.cat((x1, init_pts[batch_idx]), -1), ellipsoids[batch_idx].adj_mat[0])
+          #  x1 = x1 + init_pts[batch_idx]
 
             # before deformation 2
             x1_up = self.unpooling[0](x1, ellipsoids[batch_idx].unpool_idx[0])
@@ -122,7 +126,8 @@ class P2MModel(nn.Module):
 
             # after deformation 2
             x2, x_hidden = self.gcns[1](x, ellipsoids[batch_idx].adj_mat[1])
-            x2 = x2 + x1_up
+#            x2 = x2 + x1_up
+            x2 = self.gconv2(torch.cat((x2, x1_up), -1), ellipsoids[batch_idx].adj_mat[1])
 
             # before deformation 3
             x2_up = self.unpooling[1](x2, ellipsoids[batch_idx].unpool_idx[1])
@@ -144,7 +149,9 @@ class P2MModel(nn.Module):
                 x3 = F.relu(x3)
             # after deformation 3
             x3 = self.gconv(x3, ellipsoids[batch_idx].adj_mat[2])
-            x3 = x3 + x2_up
+ #           x3 = x3 + x2_up
+
+            x3 = self.gconv3(torch.cat((x3, x2_up), -1),  ellipsoids[batch_idx].adj_mat[2])
 
             x1s.append(x1)
             x2s.append(x2)
