@@ -9,6 +9,8 @@ import argparse, sys, os
 import pickle
 import numpy as np
 import open3d as o3d
+import sklearn.preprocessing
+import trimesh
 
 parser = argparse.ArgumentParser(description='Renders given obj file by rotation a camera around it.')
 
@@ -50,40 +52,77 @@ def normal(v):
 
 
 def camera_mat(param):
-    theta = param[0] * np.pi / 180.0
+    theta = np.deg2rad(param[0])
     phi = np.deg2rad(param[1])
 
-    camy = param[3] * np.sin(phi)
-    lens = param[3] * np.cos(phi)
-    camx = lens * np.cos(theta)
-    camz = lens * np.sin(theta)
+    camY = param[3]*np.sin(phi)
+    temp = param[3]*np.cos(phi)
+    camX = temp * np.cos(theta)
+    camZ = temp * np.sin(theta)
+    cam_pos = np.array([camX, camY, camZ])
 
-    Z = np.stack([camx, camy, camz])
-    x = camy * np.cos(theta + np.pi)
-    z = camy * np.sin(theta + np.pi)
-    Y = np.stack([x, lens, z])
-    X = np.cross(Y, Z)
+    axisZ = cam_pos.copy()
+    axisY = np.array([0,1,0])
+    axisX = np.cross(axisY, axisZ)
+    axisY = np.cross(axisZ, axisX)
 
-    cm_mat = np.stack([normal(X), normal(Y), normal(Z)])
-    return cm_mat, Z
+    cam_mat = np.array([axisX, axisY, axisZ])
+    cam_mat = sklearn.preprocessing.normalize(cam_mat, axis=1)
+    return cam_mat, cam_pos
 
 
-T_shapenet_p2m = np.array([
-    [0, 0, 1, 0],
-    [0, 1, 0, 0],
-    [-1, 0, 0, 0],
-    [0, 0, 0, 1]
-])
+def original_obj_transform(obj_path, view_path):
+    mesh_list = list(trimesh.load_mesh(obj_path, 'obj').geometry.values())
+    # if not isinstance(mesh_list, list):
+    #     mesh_list = [mesh_list]
+
+    area_sum = 0
+    for mesh in mesh_list:
+        area_sum += np.sum(mesh.area_faces)
+
+    sample = np.zeros((0, 3), dtype=np.float32)
+    normal = np.zeros((0, 3), dtype=np.float32)
+    for mesh in mesh_list:
+        number = int(round(16384 * np.sum(mesh.area_faces) / area_sum))
+        if number < 1:
+            continue
+        # points, index = trimesh.sample.sample_surface_even(mesh, number)
+        points, index = trimesh.sample.sample_surface(mesh, number)
+        sample = np.append(sample, points, axis=0)
+
+        triangles = mesh.triangles[index]
+        pt1 = triangles[:, 0, :]
+        pt2 = triangles[:, 1, :]
+        pt3 = triangles[:, 2, :]
+        norm = np.cross(pt3 - pt1, pt2 - pt1)
+        norm = sklearn.preprocessing.normalize(norm, axis=1)
+        normal = np.append(normal, norm, axis=0)
+
+    # 2 tranform to camera view
+    position = sample * 0.57
+
+    cam_params = np.loadtxt(view_path)
+    for index, param in enumerate(cam_params):
+        # camera tranform
+        cam_mat, cam_pos = camera_mat(param)
+
+        pt_trans = np.dot(position - cam_pos, cam_mat.transpose())
+        nom_trans = np.dot(normal, cam_mat.transpose())
+        train_data = np.hstack((pt_trans, nom_trans))
+
+        p2m_pcd = o3d.geometry.PointCloud()
+        p2m_pcd.points = o3d.utility.Vector3dVector(pt_trans)
+        o3d.io.write_point_cloud("/tmp/shapenet_to_p2m_original.ply", p2m_pcd)
+        break
+
 
 # rendering metadata processing
 rendering_metadata = np.loadtxt(args.rendering_metadata)
 R, t = camera_mat(rendering_metadata[0])
-T = np.eye(4, 4)
-T[:3, :3] = R
-# T[:3, 3] = t
-# T = np.matmul(np.linalg.inv(T_shapenet_p2m), T)
-print(T)
-print(t, np.matmul(T_shapenet_p2m[:3, :3], t))
+T_local_world = np.eye(4, 4)
+T_local_world[:3, :3] = R
+T_local_world[:3, 3] = -np.matmul(R, t)
+print(T_local_world)
 
 # P2M data (just for debugging)
 with open(args.dat_file, 'rb') as f:
@@ -91,31 +130,20 @@ with open(args.dat_file, 'rb') as f:
 p2m_pts, p2m_normals = p2m_data[:, :3], p2m_data[:, 3:]
 p2m_pcd = o3d.geometry.PointCloud()
 p2m_pcd.points = o3d.utility.Vector3dVector(p2m_pts)
+o3d.io.write_point_cloud("/tmp/p2m_original.ply", p2m_pcd)
 
-# T_final = np.matmul(T_shapenet_p2m, np.linalg.inv(T))
-# T_final = np.linalg.inv(T)
-p2m_pcd.scale(1/0.57, center=True)
-
-p2m_pcd.transform(np.linalg.inv(T))
-p2m_pcd.translate(t)
-p2m_pcd.transform(T_shapenet_p2m)
-
-# p2m_pcd.scale(1/0.57, center=False)
-mean_p2m_pts = np.mean(p2m_pcd.points, axis=0)
-p2m_pcd.translate(-mean_p2m_pts)
-print('mean_p2m_pts', mean_p2m_pts)
-o3d.io.write_point_cloud("/tmp/p2m.ply", p2m_pcd)
-
+original_obj_transform(args.obj, args.rendering_metadata)
 
 # shapenet model transformation
 shapenet_model = o3d.io.read_triangle_mesh(args.obj)
-mean_shapenet_model = np.mean(shapenet_model.vertices, axis=0)
-# shapenet_model.translate(-mean_shapenet_model)
+o3d.io.write_triangle_mesh('/tmp/shapenet_original.obj', shapenet_model)
 
-# shapenet_model.scale(0.57, center=False)
-# shapenet_model.transform(T)
-# shapenet_model.scale(0.57, center=False)
-o3d.io.write_triangle_mesh('/tmp/shapenet.obj', shapenet_model)
+shapenet_model.scale(0.57, center=False)
+shapenet_model.transform(T_local_world)
+o3d.io.write_triangle_mesh(
+    os.path.join(os.path.dirname(args.obj), 'model_local.obj'),
+    shapenet_model
+)
 exit(0)
 
 import bpy
