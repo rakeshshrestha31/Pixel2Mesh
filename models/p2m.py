@@ -12,12 +12,13 @@ from models.layers.gprojection_xyz import GProjection as GProjectionXYZ
 
 class P2MModel(nn.Module):
 
-    def __init__(self, options, camera_f, camera_c, mesh_pos, freeze_cv=False):
+    def __init__(self, options, ellipsoid, camera_f, camera_c, mesh_pos, freeze_cv=False):
         super(P2MModel, self).__init__()
         self.freeze_cv = freeze_cv
         self.hidden_dim = options.hidden_dim
         self.coord_dim = options.coord_dim
         self.last_hidden_dim = options.last_hidden_dim
+        self.init_pts = nn.Parameter(ellipsoid.coord, requires_grad=False)
         self.gconv_activation = options.gconv_activation
 
         self.nn_encoder, self.nn_decoder = get_backbone(options, self.freeze_cv)
@@ -25,16 +26,16 @@ class P2MModel(nn.Module):
 
         self.gcns = nn.ModuleList([
             GBottleneck(6, self.features_dim, self.hidden_dim, self.coord_dim,
-                        activation=self.gconv_activation),
+                        ellipsoid.adj_mat[0], activation=self.gconv_activation),
             GBottleneck(6, self.features_dim + self.hidden_dim, self.hidden_dim, self.coord_dim,
-                        activation=self.gconv_activation),
+                        ellipsoid.adj_mat[1], activation=self.gconv_activation),
             GBottleneck(6, self.features_dim + self.hidden_dim, self.hidden_dim, self.last_hidden_dim,
-                        activation=self.gconv_activation)
+                        ellipsoid.adj_mat[2], activation=self.gconv_activation)
         ])
 
         self.unpooling = nn.ModuleList([
-            GUnpooling(),
-            GUnpooling()
+            GUnpooling(ellipsoid.unpool_idx[0]),
+            GUnpooling(ellipsoid.unpool_idx[1])
         ])
 
         # if options.align_with_tensorflow:
@@ -44,10 +45,11 @@ class P2MModel(nn.Module):
         self.projection = GProjectionXYZ(mesh_pos, camera_f, camera_c, bound=options.z_threshold,
                                       tensorflow_compatible=options.align_with_tensorflow)
 
-        self.gconv = GConv(in_features=self.last_hidden_dim, out_features=self.coord_dim)
-        self.gconv1 = GConv(in_features=6, out_features=3)
-        self.gconv2 = GConv(in_features=6, out_features=3)
-        self.gconv3 = GConv(in_features=6, out_features=3)
+        self.gconv = GConv(in_features=self.last_hidden_dim, out_features=self.coord_dim,
+                           adj_mat=ellipsoid.adj_mat[2])
+        self.gconv1 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[0])
+        self.gconv2 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[1])
+        self.gconv3 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[2])
 
     def src2ref(self, pts, ref_proj, src_proj):
         with torch.no_grad():
@@ -60,20 +62,8 @@ class P2MModel(nn.Module):
         return  pts
 
 
-    def forward(self, img, proj, ellipsoids, depth_values=None):
+    def forward(self, img, proj, depth_values=None):
         batch_size = img.size(0)
-        assert(batch_size, len(ellipsoids))
-        init_pts = []
-        device = next(self.parameters()).get_device()
-        for ellipsoid in ellipsoids:
-            # move stuffs to GPU if needed
-            if device >= 0:
-                ellipsoid.coord = ellipsoid.coord.cuda(device)
-                for i in range(3):
-                    ellipsoid.adj_mat[i] = ellipsoid.adj_mat[i].cuda(device)
-            coord_param = nn.Parameter(ellipsoid.coord, requires_grad=False) \
-                .unsqueeze(0).expand(1, -1, -1)
-            init_pts.append(coord_param)
 
         #Multi-view start
         img_list = torch.unbind(img, 1)
@@ -85,79 +75,46 @@ class P2MModel(nn.Module):
         ref_proj, src_proj_list       = proj_list[0], proj_list[1:]
 
         img_shape = self.projection.image_feature_shape(img[0])
+        init_pts = self.init_pts.data.unsqueeze(0).expand(batch_size, -1, -1)
 
-        x1s = []
-        x2s = []
-        x3s = []
-        x1_ups = []
-        x2_ups = []
+        x = self.projection(img_shape, ref_feature, init_pts, depth_values)
+        # x1 shape is torch.Size([16, 156, 3]), x_h
+        x1, x_hidden = self.gcns[0](x)
+        x1 = self.gconv1(torch.cat((x1, init_pts), -1))
+        # x1 = x1 + init_pts[batch_idx]
 
-        def batch_from_list(lst, batch_idx):
-            return [i[batch_idx:batch_idx+1] for i in lst]
+        # before deformation 2
+        x1_up = self.unpooling[0](x1)
 
-        def batch_from_tensor(tensor, batch_idx):
-            return tensor[batch_idx:batch_idx+1]
+        # GCN Block 2
+        x = self.projection(img_shape, ref_feature, x1, depth_values)
 
-        # the ref_feature (and others) are list of feature tensors
-        # with each element's first dimension being batch size
-        for batch_idx in range(batch_size):
-            x = self.projection(
-                img_shape,
-                batch_from_list(ref_feature, batch_idx),
-                init_pts[batch_idx],
-                depth_values
-            )
-            # x1 shape is torch.Size([16, 156, 3]), x_h
-            x1, x_hidden = self.gcns[0](x, ellipsoids[batch_idx].adj_mat[0])
-            x1 = self.gconv1(torch.cat((x1, init_pts[batch_idx]), -1), ellipsoids[batch_idx].adj_mat[0])
-          #  x1 = x1 + init_pts[batch_idx]
+        x = self.unpooling[0](torch.cat([x, x_hidden], 2))
 
-            # before deformation 2
-            x1_up = self.unpooling[0](x1, ellipsoids[batch_idx].unpool_idx[0])
+        # after deformation 2
+        x2, x_hidden = self.gcns[1](x)
+        # x2 = x2 + x1_up
 
-            # GCN Block 2
-            x = self.projection(img_shape,
-                                batch_from_list(ref_feature, batch_idx), x1, depth_values)
+        x2 = self.gconv2(torch.cat((x2, x1_up), -1))
 
-            x = self.unpooling[0](
-                torch.cat([x, x_hidden], 2),
-                ellipsoids[batch_idx].unpool_idx[0]
-            )
+        # before deformation 3
+        x2_up = self.unpooling[1](x2)
 
-            # after deformation 2
-            x2, x_hidden = self.gcns[1](x, ellipsoids[batch_idx].adj_mat[1])
-#            x2 = x2 + x1_up
-            x2 = self.gconv2(torch.cat((x2, x1_up), -1), ellipsoids[batch_idx].adj_mat[1])
+        # GCN Block 3
+        # x2 shape is torch.Size([16, 618, 3])
+        x = self.projection(img_shape, ref_feature, x2, depth_values)
 
-            # before deformation 3
-            x2_up = self.unpooling[1](x2, ellipsoids[batch_idx].unpool_idx[1])
+        x = self.unpooling[1](torch.cat([x, x_hidden], 2))
 
-            # GCN Block 3
-            # x2 shape is torch.Size([16, 618, 3])
-            x = self.projection(
-                img_shape, batch_from_list(ref_feature, batch_idx), x2, depth_values
-            )
+        x3, _ = self.gcns[2](x)
 
-            x = self.unpooling[1](
-                torch.cat([x, x_hidden], 2),
-                ellipsoids[batch_idx].unpool_idx[1]
-            )
+        if self.gconv_activation:
+            x3 = F.relu(x3)
+        # after deformation 3
+        x3 = self.gconv(x3)
+ #       x3 = x3 + x2_up
 
-            x3, _ = self.gcns[2](x, ellipsoids[batch_idx].adj_mat[2])
-
-            if self.gconv_activation:
-                x3 = F.relu(x3)
-            # after deformation 3
-            x3 = self.gconv(x3, ellipsoids[batch_idx].adj_mat[2])
- #           x3 = x3 + x2_up
-
-            x3 = self.gconv3(torch.cat((x3, x2_up), -1),  ellipsoids[batch_idx].adj_mat[2])
-
-            x1s.append(x1)
-            x2s.append(x2)
-            x3s.append(x3)
-            x1_ups.append(x1_up)
-            x2_ups.append(x2_up)
+        x3 = self.gconv3(torch.cat((x3, x2_up), -1))
 
         if self.nn_decoder is not None:
             reconst = self.nn_decoder(ref_feature)
@@ -166,8 +123,8 @@ class P2MModel(nn.Module):
         # multi-view end
 
         return {
-            "pred_coord": [x1s, x2s, x3s],
-            "pred_coord_before_deform": [init_pts, x1_ups, x2_ups],
+            "pred_coord": [x1, x2, x3],
+            "pred_coord_before_deform": [init_pts, x1_up, x2_up],
             "reconst": reconst,
             "depth": out_encoder["depth"],
         }

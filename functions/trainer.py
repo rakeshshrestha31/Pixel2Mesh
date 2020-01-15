@@ -27,6 +27,9 @@ class Trainer(CheckpointRunner):
             # Visualization renderer
             self.renderer = MeshRenderer(self.options.dataset.camera_f, self.options.dataset.camera_c,
                                          self.options.dataset.mesh_pos)
+
+            # create ellipsoid
+            self.ellipsoid = Ellipsoid(self.options.dataset.mesh_pos)
         else:
             self.renderer = None
 
@@ -35,7 +38,7 @@ class Trainer(CheckpointRunner):
         else:
             if self.options.model.name == "pixel2mesh":
                 # create model
-                self.model = P2MModel(self.options.model,
+                self.model = P2MModel(self.options.model, self.ellipsoid,
                                       self.options.dataset.camera_f, self.options.dataset.camera_c,
                                       self.options.dataset.mesh_pos, self.options.train.freeze_cv)
             elif self.options.model.name == "classifier":
@@ -68,7 +71,7 @@ class Trainer(CheckpointRunner):
 
         # Create loss functions
         if self.options.model.name == "pixel2mesh":
-            self.criterion = P2MLoss(self.options.loss).cuda()
+            self.criterion = P2MLoss(self.options.loss, self.ellipsoid).cuda()
         elif self.options.model.name == "classifier":
             self.criterion = CrossEntropyLoss()
         else:
@@ -93,7 +96,7 @@ class Trainer(CheckpointRunner):
         return {'optimizer': self.optimizer,
                 'lr_scheduler': self.lr_scheduler}
 
-    def train_step(self, input_batch, initial_meshes):
+    def train_step(self, input_batch):
         self.model.train()
         input_batch = tocuda(input_batch)
         # Grab data from the batch
@@ -103,10 +106,10 @@ class Trainer(CheckpointRunner):
 
         # predict with model
         with torch.autograd.set_detect_anomaly(True):
-            out = self.model(images, proj_matrices, initial_meshes, depth_values)
+            out = self.model(images, proj_matrices, depth_values)
 
             # compute loss
-            loss, loss_summary = self.criterion(out, input_batch, initial_meshes)
+            loss, loss_summary = self.criterion(out, input_batch)
             self.losses.update(loss.detach().cpu().item())
 
             # Do backprop
@@ -143,21 +146,16 @@ class Trainer(CheckpointRunner):
             for step, batch in enumerate(train_data_loader):
                 # Send input to GPU
                 # start_time = time.time()
-                initial_meshes = [
-                    self.dataset.get_initial_mesh(idx)
-                    for idx in batch['idx'].tolist()
-                ]
-
                 batch = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
                 # Run training step
-                out = self.train_step(batch, initial_meshes)
+                out = self.train_step(batch)
 
                 self.step_count += 1
 
                 # Tensorboard logging every summary_steps steps
                 if self.step_count % self.options.train.summary_steps == 0:
-                    self.train_summaries(batch, initial_meshes, *out)
+                    self.train_summaries(batch, *out)
 
                 # save checkpoint only if best
                 for check_best in self.check_best_metrics:
@@ -184,12 +182,12 @@ class Trainer(CheckpointRunner):
 
         self.test()
 
-    def train_summaries(self, input_batch, initial_meshes, out_summary, loss_summary):
+    def train_summaries(self, input_batch, out_summary, loss_summary):
         if self.renderer is not None:
             # Do visualization for the first 2 images of the batch
             render_mesh = self.renderer.p2m_batch_visualize(
                 input_batch, out_summary,
-                [initial_meshes[i].faces for i in range(len(initial_meshes))]
+                self.ellipsoid.faces
             )
             self.summary_writer.add_image("render_mesh", render_mesh, self.step_count)
             self.summary_writer.add_histogram("length_distribution", input_batch["length"].cpu().numpy(),

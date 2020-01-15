@@ -151,8 +151,8 @@ class MeshRenderer(object):
             # write_point_cloud(gt_points, '/tmp/{}_gt.ply'.format(i))
             for j in range(3):
                 for k in (["pred_coord_before_deform", "pred_coord"] if j == 0 else ["pred_coord"]):
-                    coord = batch_output[k][j][i][0].cpu().numpy() + mesh_pos
-                    images_stack.append(self.visualize_reconstruction(gt_points, coord, faces[i][j].cpu().numpy(), image, pred_depth, gt_depth, mask))
+                    coord = batch_output[k][j][i].cpu().numpy() + mesh_pos
+                    images_stack.append(self.visualize_reconstruction(gt_points, coord, faces[j].cpu().numpy(), image, pred_depth, gt_depth, mask))
                     # write_point_cloud(coord, '/tmp/{}_{}_{}.ply'.format(i, j, k))
 
         return torch.from_numpy(np.concatenate(images_stack, 1))

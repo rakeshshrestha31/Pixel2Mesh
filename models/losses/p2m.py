@@ -6,12 +6,16 @@ from models.layers.chamfer_wrapper import ChamferDist
 
 
 class P2MLoss(nn.Module):
-    def __init__(self, options):
+    def __init__(self, options, ellipsoid):
         super().__init__()
         self.options = options
         self.l1_loss = nn.L1Loss(reduction='mean')
         self.l2_loss = nn.MSELoss(reduction='mean')
         self.chamfer_dist = ChamferDist()
+        self.laplace_idx = nn.ParameterList([
+            nn.Parameter(idx, requires_grad=False) for idx in ellipsoid.laplace_idx])
+        self.edges = nn.ParameterList([
+            nn.Parameter(edges, requires_grad=False) for edges in ellipsoid.edges])
 
     def edge_regularization(self, pred, edges):
         """
@@ -45,8 +49,7 @@ class P2MLoss(nn.Module):
 
         return laplace
 
-    def laplace_regularization(self, input1, input2,
-                               block_idx, laplace_idx):
+    def laplace_regularization(self, input1, input2, block_idx):
         """
         :param input1: vertices tensor before deformation
         :param input2: vertices after the deformation
@@ -55,9 +58,8 @@ class P2MLoss(nn.Module):
 
         if different than 1 then adds a move loss as in the original TF code
         """
-
-        lap1 = self.laplace_coord(input1, laplace_idx[block_idx])
-        lap2 = self.laplace_coord(input2, laplace_idx[block_idx])
+        lap1 = self.laplace_coord(input1, self.laplace_idx[block_idx])
+        lap2 = self.laplace_coord(input2, self.laplace_idx[block_idx])
         laplace_loss = self.l2_loss(lap1, lap2) * lap1.size(-1)
         move_loss = self.l2_loss(input1, input2) * input1.size(-1) if block_idx > 0 else 0
         return laplace_loss, move_loss
@@ -78,11 +80,10 @@ class P2MLoss(nn.Module):
         mask = mask > 0.5
         return F.smooth_l1_loss(depth_est[mask], depth_gt[mask], size_average=True)
 
-    def forward(self, outputs, targets, ellipsoids):
+    def forward(self, outputs, targets):
         """
         :param outputs: outputs from P2MModel
         :param targets: targets from input
-        :param ellipsoids: initial ellipsoid objects
         :return: loss, loss_summary (dict)
         """
 
@@ -98,36 +99,30 @@ class P2MLoss(nn.Module):
         if outputs["reconst"] is not None and self.options.weights.reconst != 0:
             image_loss = self.image_loss(gt_images, outputs["reconst"])
 
-        ellipsoids_info = extract_meshes_info(ellipsoids, gt_coord.get_device())
-
         for i in range(3):
-            for batch_idx in range(gt_coord.size(0)):
-                dist1, dist2, idx1, idx2 = self.chamfer_dist(
-                    gt_coord[batch_idx:batch_idx+1],
-                    pred_coord[i][batch_idx]
-                )
-                chamfer_loss += self.options.weights.chamfer[i] * ( \
-                    torch.mean(dist1) \
-                    + self.options.weights.chamfer_opposite \
-                      * torch.mean(dist2) \
-                )
-                # normal_loss = 0
-                normal_loss += self.normal_loss(
-                    gt_normal[batch_idx:batch_idx+1], idx2,
-                    pred_coord[i][batch_idx],
-                    ellipsoids_info['edges'][batch_idx][i]
-                )
-                edge_loss += self.edge_regularization(
-                    pred_coord[i][batch_idx],
-                    ellipsoids_info['edges'][batch_idx][i]
-                )
-                lap, move = self.laplace_regularization(
-                    pred_coord_before_deform[i][batch_idx],
-                    pred_coord[i][batch_idx], i,
-                    ellipsoids_info['laplace_indices'][batch_idx]
-                )
-                lap_loss += lap_const[i] * lap
-                move_loss += lap_const[i] * move
+            dist1, dist2, idx1, idx2 = self.chamfer_dist(
+                gt_coord,
+                pred_coord[i]
+            )
+            chamfer_loss += self.options.weights.chamfer[i] * ( \
+                torch.mean(dist1) \
+                + self.options.weights.chamfer_opposite \
+                  * torch.mean(dist2) \
+            )
+            # normal_loss = 0
+            normal_loss += self.normal_loss(
+                gt_normal, idx2,
+                pred_coord[i], self.edges[i]
+            )
+            edge_loss += self.edge_regularization(
+                pred_coord[i], self.edges[i]
+            )
+            lap, move = self.laplace_regularization(
+                pred_coord_before_deform[i],
+                pred_coord[i], i
+            )
+            lap_loss += lap_const[i] * lap
+            move_loss += lap_const[i] * move
 
         depth_loss += self.depth_loss(gt_depth, pred_depth, mask)
         #
@@ -154,31 +149,3 @@ class P2MLoss(nn.Module):
             "loss_normal": normal_loss,
             "loss_depth": depth_loss,
         }
-
-def extract_meshes_info(meshes, device):
-    """extract information (laplace indices, edges) from meshes
-    :param: meshes list of meses
-    :param: is_cuda boolean
-    :return: dictionary of mesh_info"""
-    laplace_indices = []
-    edges = []
-    for ellipsoid in meshes:
-        laplace_indices.append(nn.ParameterList([
-            nn.Parameter(idx, requires_grad=False)
-            for idx in ellipsoid.laplace_idx]
-        ))
-        edges.append(nn.ParameterList([
-            nn.Parameter(e, requires_grad=False)
-            for e in ellipsoid.edges
-        ]))
-
-    if device >= 0:
-        laplace_indices = [
-            i.cuda(device) for i in laplace_indices
-        ]
-        edges = [i.cuda(device) for i in edges]
-
-    return {
-        "laplace_indices": laplace_indices,
-        "edges": edges
-    }

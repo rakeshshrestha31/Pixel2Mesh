@@ -9,7 +9,6 @@ from skimage import io, transform
 import config
 from datasets.data_io import *
 from datasets.base_dataset import BaseDataset
-from utils.mesh import Ellipsoid
 
 # the DTU dataset preprocessed by Yao Yao (only for training)
 class MVSDataset(BaseDataset):
@@ -168,50 +167,4 @@ class MVSDataset(BaseDataset):
                 "labels": 0,
                 "idx": idx
                 }
-
-    def get_initial_mesh(self, idx):
-        meta = self.metas[idx]
-        scan, _, ref_view, _ = meta
-
-        # TODO: find a better way than to read the cam file twice
-        # cuz already read in __getitem__
-        proj_mat_filename = os.path.join(
-            self.datapath, 'Cameras/train_resized/{:0>8}_cam.txt'
-        ).format(ref_view)
-        _, extrinsics, _, _ = self.read_cam_file(proj_mat_filename)
-        return get_initial_mesh(
-            get_initial_mesh_filename(self.datapath, scan),
-            self.mesh_pos, extrinsics
-        )
-
-def get_initial_mesh_filename(datapath, scan):
-    scan_idx = int(scan[4:])
-    initial_mesh_filename = os.path.join(
-        datapath,
-        'initial_mesh/stl{:0>3}_total/info_ellipsoid.dat'.format(scan_idx)
-    )
-    return initial_mesh_filename
-
-def get_initial_mesh(initial_mesh_filename, mesh_pos, extrinsics):
-    initial_mesh = Ellipsoid(mesh_pos, initial_mesh_filename)
-
-    extrinsics = extrinsics.copy()
-    extrinsics = torch.from_numpy(extrinsics) \
-        .type(initial_mesh.coord.type())
-    if initial_mesh.coord.is_cuda:
-        extrinsics = extrinsics.cuda(initial_mesh.coord.get_device())
-
-    # transform initial mesh to ref_view frame
-    initial_mesh.coord = transform_coords(initial_mesh.coord, extrinsics)
-    return initial_mesh
-
-def transform_coords(coords, transformation):
-    coords_homogeneous = torch.cat((
-        coords,
-        torch.ones((coords.shape[0], 1), dtype=coords.dtype, device=coords.device)
-    ), dim=1)
-    transformed_coords_homogeneous = torch.mm(
-        transformation, coords_homogeneous.permute(1, 0)
-    )
-    return transformed_coords_homogeneous[:3, :].permute(1, 0)
 
