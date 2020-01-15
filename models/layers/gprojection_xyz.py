@@ -80,8 +80,8 @@ class GProjection(nn.Module):
         w = -self.camera_f[0] * (positions[:, :, 0] / self.bound_val(positions[:, :, 2])) + camera_c_offset[0]
         h = self.camera_f[1] * (positions[:, :, 1] / self.bound_val(positions[:, :, 2])) + camera_c_offset[1]
 
-        d_max = depth_values[:, -1]
-        d_min = depth_values[:, 0]
+        d_max = depth_values[:, -1].unsqueeze(-1)
+        d_min = depth_values[:, 0].unsqueeze(-1)
         d_normed = self.normalize_depth(-positions[:, :, -1], d_max, d_min)
 
 
