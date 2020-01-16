@@ -105,17 +105,16 @@ class Trainer(CheckpointRunner):
         depth_values = input_batch["depth_values"]
 
         # predict with model
-        with torch.autograd.set_detect_anomaly(True):
-            out = self.model(images, proj_matrices, depth_values)
+        out = self.model(images, proj_matrices, depth_values)
 
-            # compute loss
-            loss, loss_summary = self.criterion(out, input_batch)
-            self.losses.update(loss.detach().cpu().item())
+        # compute loss
+        loss, loss_summary = self.criterion(out, input_batch)
+        self.losses.update(loss.detach().cpu().item())
 
-            # Do backprop
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+        # Do backprop
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
         # Pack output arguments to be used for visualization
         return recursive_detach(out), recursive_detach(loss_summary)
