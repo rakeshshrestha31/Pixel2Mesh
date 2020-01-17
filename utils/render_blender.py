@@ -213,7 +213,11 @@ if __name__ == '__main__':
     if args.objects_categories_file:
         shapenet_objects_categories = np.loadtxt(
             args.objects_categories_file, dtype=str
+        ).tolist()
+        shapenet_objects_categories = (
+            tuple(i.split('_')[:2]) for i in shapenet_objects_categories
         )
+
     else:
         shapenet_objects = (
             i for i in os.listdir(args.shapenet_dir)
