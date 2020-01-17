@@ -12,6 +12,7 @@ import numpy as np
 import open3d as o3d
 import sklearn.preprocessing
 import trimesh
+import multiprocessing as mp
 
 parser = argparse.ArgumentParser(description='Renders given obj file by rotation a camera around it.')
 
@@ -114,6 +115,78 @@ def projection_mat(R, t):
     ])
     return np.matmul(P, T)
 
+def render_object(obj_category):
+    obj, category = obj_category
+    original_mesh_file = os.path.join(
+        args.shapenet_dir, obj, category, 'model.obj'
+    )
+    scaled_mesh_file = '/tmp/model_scaled_{}_{}.obj'.format(obj, category)
+    normal_mesh_file = '/tmp/model_normal_{}_{}.obj'.format(obj, category)
+    rendering_metadata_file = '{}/{}/{}/rendering/rendering_metadata.txt' \
+                                .format(args.rendering_dir, obj, category)
+    depth_dir = '{}/{}/{}/rendering_depth' \
+                    .format(args.rendering_dir, obj, category)
+    os.makedirs(depth_dir, exist_ok=True)
+
+    # if len(os.listdir(depth_dir)):
+    #     continue
+
+    print('Working with ', obj, category)
+    print('mesh file ', original_mesh_file)
+    shapenet_model = o3d.io.read_triangle_mesh(original_mesh_file)
+    # scale it to fit P2M
+    shapenet_model.scale(P2M_SCALE_FACTOR)
+    o3d.io.write_triangle_mesh(scaled_mesh_file, shapenet_model)
+
+    # find mesh with normal
+    try:
+        subprocess.run([
+            'meshlabserver', '-i', scaled_mesh_file, '-o', normal_mesh_file,
+            # options to select properties to save
+            '-m', 'vn'
+        ]) # , stdout=subprocess.DEVNULL)
+    except KeyboardInterrupt:
+        raise(KeyboardInterrupt)
+    except Exception as e:
+        print('exception: ', e.message)
+
+    rendering_metadata = np.loadtxt(rendering_metadata_file)
+
+    for view_id, extrinsics in enumerate(rendering_metadata):
+        R, t = camera_mat(extrinsics)
+        proj_mat = projection_mat(R, t)
+        proj_mat_str = np.char.mod('%f', proj_mat.flatten()).tolist()
+
+        depth_file_prefix = os.path.join(
+            depth_dir, '{0:02}'.format(view_id)
+        )
+        print('writing', depth_file_prefix)
+        try:
+            subprocess.run([
+                'python', args.xms_exec,
+                '-texture', 'simpledepthmap',
+                normal_mesh_file, depth_file_prefix,
+                '--intrinsics',
+                str(P2M_FOCAL_LENGTH),
+                str(P2M_PRINCIPAL_POINT[0]), str(P2M_PRINCIPAL_POINT[1]),
+                '--extrinsics', *proj_mat_str,
+                '--image_size', str(P2M_IMG_SIZE[0]), str(P2M_IMG_SIZE[1]),
+                '--min_point_depth', str(P2M_MIN_POINT_DEPTH),
+                '--max_point_depth', str(P2M_MAX_POINT_DEPTH),
+            ], cwd=os.path.dirname(args.xms_exec)) # , stdout=subprocess.DEVNULL)
+        except KeyboardInterrupt:
+            raise(KeyboardInterrupt)
+        except Exception as e:
+            print('exception: ', e.message)
+
+        print('written', depth_file_prefix)
+        break
+
+    subprocess.run(['rm', normal_mesh_file])
+    subprocess.run(['rm', scaled_mesh_file])
+# multi-processing stuffs
+NCORE = 4
+
 if __name__ == '__main__':
     shapenet_objects = (
         i for i in os.listdir(args.shapenet_dir)
@@ -126,67 +199,5 @@ if __name__ == '__main__':
         if os.path.isdir(os.path.join(args.shapenet_dir, obj, category))
     )
 
-    for obj, category in shapenet_objects_categories:
-        original_mesh_file = os.path.join(
-            args.shapenet_dir, obj, category, 'model.obj'
-        )
-        scaled_mesh_file = '/tmp/model_scaled.obj'
-        normal_mesh_file = '/tmp/model_normal.obj'
-        rendering_metadata_file = '{}/{}/{}/rendering/rendering_metadata.txt' \
-                                    .format(args.rendering_dir, obj, category)
-        depth_dir = '{}/{}/{}/rendering_depth' \
-                        .format(args.rendering_dir, obj, category)
-        os.makedirs(depth_dir, exist_ok=True)
-
-        if len(os.listdir(depth_dir)):
-            continue
-
-        print('Working with ', obj, category)
-        shapenet_model = o3d.io.read_triangle_mesh(original_mesh_file)
-        # scale it to fit P2M
-        shapenet_model.scale(P2M_SCALE_FACTOR)
-        o3d.io.write_triangle_mesh(scaled_mesh_file, shapenet_model)
-
-        # find mesh with normal
-        try:
-            subprocess.run([
-                'meshlabserver', '-i', scaled_mesh_file, '-o', normal_mesh_file,
-                # options to select properties to save
-                '-m', 'vn'
-            ], stdout=subprocess.DEVNULL)
-        except KeyboardInterrupt:
-            raise(KeyboardInterrupt)
-        except Exception as e:
-            print('exception: ', e.message)
-
-        rendering_metadata = np.loadtxt(rendering_metadata_file)
-
-        for view_id, extrinsics in enumerate(rendering_metadata):
-            R, t = camera_mat(extrinsics)
-            proj_mat = projection_mat(R, t)
-            proj_mat_str = np.char.mod('%f', proj_mat.flatten()).tolist()
-
-            depth_file_prefix = os.path.join(
-                depth_dir, '{0:02}'.format(view_id)
-            )
-            print('writing', depth_file_prefix)
-            try:
-                subprocess.run([
-                    'python', args.xms_exec,
-                    '-texture', 'simpledepthmap',
-                    normal_mesh_file, depth_file_prefix,
-                    '--intrinsics',
-                    str(P2M_FOCAL_LENGTH),
-                    str(P2M_PRINCIPAL_POINT[0]), str(P2M_PRINCIPAL_POINT[1]),
-                    '--extrinsics', *proj_mat_str,
-                    '--image_size', str(P2M_IMG_SIZE[0]), str(P2M_IMG_SIZE[1]),
-                    '--min_point_depth', str(P2M_MIN_POINT_DEPTH),
-                    '--max_point_depth', str(P2M_MAX_POINT_DEPTH),
-                ], cwd=os.path.dirname(args.xms_exec), stdout=subprocess.DEVNULL)
-            except KeyboardInterrupt:
-                raise(KeyboardInterrupt)
-            except Exception as e:
-                print('exception: ', e.message)
-
-            print('written', depth_file_prefix)
-            break
+    with mp.Pool(NCORE) as p:
+        p.map(render_object, shapenet_objects_categories)
