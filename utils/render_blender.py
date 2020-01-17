@@ -13,6 +13,8 @@ import open3d as o3d
 import sklearn.preprocessing
 import trimesh
 import multiprocessing as mp
+import time
+import contextlib
 
 parser = argparse.ArgumentParser(description='Renders given obj file by rotation a camera around it.')
 
@@ -21,6 +23,8 @@ parser.add_argument('shapenet_dir', type=str,
 parser.add_argument('rendering_dir', type=str,
                     help='Directory of the rendering meta data.')
 parser.add_argument('xms_exec', type=str,
+                    help='xms executable for rendering depth')
+parser.add_argument('--objects-categories-file', type=str, default='',
                     help='xms executable for rendering depth')
 
 args = parser.parse_args()
@@ -129,26 +133,44 @@ def render_object(obj_category):
     os.makedirs(depth_dir, exist_ok=True)
 
     # if len(os.listdir(depth_dir)):
-    #     continue
+    #     return
+
+    # avoid already (recently) rendered files
+    depth_file = os.path.join(depth_dir, '00.png')
+    if os.path.isfile(depth_file): # and time.time() - os.path.getmtime(depth_file) < 27500:
+        return
 
     print('Working with ', obj, category)
     print('mesh file ', original_mesh_file)
-    shapenet_model = o3d.io.read_triangle_mesh(original_mesh_file)
-    # scale it to fit P2M
-    shapenet_model.scale(P2M_SCALE_FACTOR)
-    o3d.io.write_triangle_mesh(scaled_mesh_file, shapenet_model)
+
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(normal_mesh_file)
+        os.remove(scaled_mesh_file)
+
+    try:
+        shapenet_model = o3d.io.read_triangle_mesh(original_mesh_file)
+        # scale it to fit P2M
+        shapenet_model.scale(P2M_SCALE_FACTOR)
+        o3d.io.write_triangle_mesh(scaled_mesh_file, shapenet_model)
+
+        # shapenet_model = trimesh.load_mesh(original_mesh_file)
+        # shapenet_model.apply_scale(P2M_SCALE_FACTOR)
+        # shapenet_model.export(scaled_mesh_file)
+    except KeyboardInterrupt as e:
+        raise e
+    except Exception as e:
+        print('[Error] Unable to load mesh', original_mesh_file, str(e))
+        return
 
     # find mesh with normal
-    try:
-        subprocess.run([
-            'meshlabserver', '-i', scaled_mesh_file, '-o', normal_mesh_file,
-            # options to select properties to save
-            '-m', 'vn'
-        ]) # , stdout=subprocess.DEVNULL)
-    except KeyboardInterrupt:
-        raise(KeyboardInterrupt)
-    except Exception as e:
-        print('exception: ', e.message)
+    subprocess.run([
+        'meshlabserver', '-i', scaled_mesh_file, '-o', normal_mesh_file,
+        # options to select properties to save
+        '-m', 'vn'
+    ]) # , stdout=subprocess.DEVNULL)
+
+    if not os.path.isfile(normal_mesh_file):
+        print('[Error] Unable to generate mesh with normal', normal_mesh_file)
 
     rendering_metadata = np.loadtxt(rendering_metadata_file)
 
@@ -161,31 +183,31 @@ def render_object(obj_category):
             depth_dir, '{0:02}'.format(view_id)
         )
         print('writing', depth_file_prefix)
-        try:
-            subprocess.run([
-                'python', args.xms_exec,
-                '-texture', 'simpledepthmap',
-                normal_mesh_file, depth_file_prefix,
-                '--intrinsics',
-                str(P2M_FOCAL_LENGTH),
-                str(P2M_PRINCIPAL_POINT[0]), str(P2M_PRINCIPAL_POINT[1]),
-                '--extrinsics', *proj_mat_str,
-                '--image_size', str(P2M_IMG_SIZE[0]), str(P2M_IMG_SIZE[1]),
-                '--min_point_depth', str(P2M_MIN_POINT_DEPTH),
-                '--max_point_depth', str(P2M_MAX_POINT_DEPTH),
-            ], cwd=os.path.dirname(args.xms_exec)) # , stdout=subprocess.DEVNULL)
-        except KeyboardInterrupt:
-            raise(KeyboardInterrupt)
-        except Exception as e:
-            print('exception: ', e.message)
+        subprocess.run([
+            'python', args.xms_exec,
+            '-texture', 'simpledepthmap',
+            normal_mesh_file, depth_file_prefix,
+            '--intrinsics',
+            str(P2M_FOCAL_LENGTH),
+            str(P2M_PRINCIPAL_POINT[0]), str(P2M_PRINCIPAL_POINT[1]),
+            '--extrinsics', *proj_mat_str,
+            '--image_size', str(P2M_IMG_SIZE[0]), str(P2M_IMG_SIZE[1]),
+            '--min_point_depth', str(P2M_MIN_POINT_DEPTH),
+            '--max_point_depth', str(P2M_MAX_POINT_DEPTH),
+        ], cwd=os.path.dirname(args.xms_exec)) # , stdout=subprocess.DEVNULL)
 
-        print('written', depth_file_prefix)
+        if os.path.isfile(depth_file_prefix + '.png'):
+            print('written', depth_file_prefix)
+        else:
+            print('[Error] unable to render', depth_file_prefix)
+
         break
 
-    subprocess.run(['rm', normal_mesh_file])
-    subprocess.run(['rm', scaled_mesh_file])
+    os.remove(normal_mesh_file)
+    os.remove(scaled_mesh_file)
+
 # multi-processing stuffs
-NCORE = 4
+NCORE = 8
 
 if __name__ == '__main__':
     if args.objects_categories_file:
