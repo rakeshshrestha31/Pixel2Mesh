@@ -147,8 +147,18 @@ def render_object(obj_category):
         os.remove(normal_mesh_file)
         os.remove(scaled_mesh_file)
 
+    # find mesh with normal
+    subprocess.run([
+        'meshlabserver', '-i', original_mesh_file, '-o', normal_mesh_file,
+        # options to select properties to save
+        '-m', 'vn'
+    ]) # , stdout=subprocess.DEVNULL)
+
+    if not os.path.isfile(normal_mesh_file):
+        print('[Error] Unable to generate mesh with normal', normal_mesh_file)
+
     try:
-        shapenet_model = o3d.io.read_triangle_mesh(original_mesh_file)
+        shapenet_model = o3d.io.read_triangle_mesh(normal_mesh_file)
         # scale it to fit P2M
         shapenet_model.scale(P2M_SCALE_FACTOR)
         o3d.io.write_triangle_mesh(scaled_mesh_file, shapenet_model)
@@ -159,18 +169,8 @@ def render_object(obj_category):
     except KeyboardInterrupt as e:
         raise e
     except Exception as e:
-        print('[Error] Unable to load mesh', original_mesh_file, str(e))
+        print('[Error] Unable to load mesh', normal_mesh_file, str(e))
         return
-
-    # find mesh with normal
-    subprocess.run([
-        'meshlabserver', '-i', scaled_mesh_file, '-o', normal_mesh_file,
-        # options to select properties to save
-        '-m', 'vn'
-    ]) # , stdout=subprocess.DEVNULL)
-
-    if not os.path.isfile(normal_mesh_file):
-        print('[Error] Unable to generate mesh with normal', normal_mesh_file)
 
     rendering_metadata = np.loadtxt(rendering_metadata_file)
 
@@ -186,7 +186,7 @@ def render_object(obj_category):
         subprocess.run([
             'python', args.xms_exec,
             '-texture', 'simpledepthmap',
-            normal_mesh_file, depth_file_prefix,
+            scaled_mesh_file, depth_file_prefix,
             '--intrinsics',
             str(P2M_FOCAL_LENGTH),
             str(P2M_PRINCIPAL_POINT[0]), str(P2M_PRINCIPAL_POINT[1]),
