@@ -61,11 +61,20 @@ class CheckpointRunner(object):
             # checkpoint is loaded if any
             self.init_with_checkpoint()
 
+    @staticmethod
+    def intrinsics_from_dataset(dataset):
+        import numpy as np
+        intrinsics = np.eye(3, 3)
+        intrinsics[:2, :2] = np.diag(dataset.camera_f)
+        intrinsics[:2, 2] = np.asarray(dataset.camera_c)
+        return intrinsics
+
     def load_dataset(self, dataset, training):
         self.logger.info("Loading datasets: %s" % dataset.name)
         if dataset.name == "shapenet":
+            intrinsics = self.intrinsics_from_dataset(dataset)
             return ShapeNet(config.SHAPENET_ROOT, dataset.subset_train if training else dataset.subset_eval,
-                            dataset.mesh_pos, dataset.normalization, dataset.shapenet)
+                            dataset.mesh_pos, dataset.normalization, dataset.shapenet, intrinsics, training)
         elif dataset.name == "shapenet_demo":
             return ShapeNetImageFolder(dataset.predict.folder, dataset.normalization, dataset.shapenet)
         elif dataset.name == "imagenet":

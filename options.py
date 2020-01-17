@@ -190,8 +190,8 @@ def reset_options(options, args, phase='train'):
         options.dataset.name = args.dataset
         # options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"
         # options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu_scan4.txt"
-        options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_10scans.txt"
-        options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu_1scan.txt"
+        options.dataset.train_list = "./datasets/data/shapenet/meta/train_list_p2mpp.txt"
+        options.dataset.test_list = "./datasets/data/shapenet/meta/test_list_p2mpp.txt"
 
     options.name = args.name
 

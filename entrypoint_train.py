@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument('--num-epochs', help='number of epochs', type=int)
     parser.add_argument('--version', help='version of task (timestamp by default)', type=str)
     parser.add_argument('--name', default='debug', type=str)
-    parser.add_argument('--dataset', default='dtu', type=str)
+    parser.add_argument('--dataset', type=str)
     parser.add_argument('--backbone', default='vgg16', type=str)
     parser.add_argument('--num_views', default=3, help='num_views', type=int)
     parser.add_argument('--seed', default=3, help='seed', type=int)
