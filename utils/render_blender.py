@@ -188,16 +188,24 @@ def render_object(obj_category):
 NCORE = 4
 
 if __name__ == '__main__':
-    shapenet_objects = (
-        i for i in os.listdir(args.shapenet_dir)
-        if os.path.isdir(os.path.join(args.shapenet_dir, i))
-    )
-    shapenet_objects_categories = (
-        (obj, category)
-        for obj in shapenet_objects
-        for category in os.listdir(os.path.join(args.shapenet_dir, obj))
-        if os.path.isdir(os.path.join(args.shapenet_dir, obj, category))
-    )
+    if args.objects_categories_file:
+        shapenet_objects_categories = np.loadtxt(
+            args.objects_categories_file, dtype=str
+        )
+    else:
+        shapenet_objects = (
+            i for i in os.listdir(args.shapenet_dir)
+            if os.path.isdir(os.path.join(args.shapenet_dir, i))
+        )
+        shapenet_objects_categories = (
+            (obj, category)
+            for obj in shapenet_objects
+            for category in os.listdir(os.path.join(args.shapenet_dir, obj))
+            if os.path.isdir(os.path.join(args.shapenet_dir, obj, category))
+        )
 
     with mp.Pool(NCORE) as p:
         p.map(render_object, shapenet_objects_categories)
+
+    # for i in shapenet_objects_categories:
+    #     render_object(i)
