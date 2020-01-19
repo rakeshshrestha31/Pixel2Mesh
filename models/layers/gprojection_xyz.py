@@ -17,7 +17,7 @@ class GProjection(nn.Module):
         super(GProjection, self).__init__()
         self.mesh_pos, self.camera_f, self.camera_c = mesh_pos, camera_f, camera_c
         self.threshold = None
-        self.bound = 0
+        self.bound = bound
         self.tensorflow_compatible = tensorflow_compatible
         if self.bound != 0:
             self.threshold = Threshold(bound, bound)
@@ -66,7 +66,8 @@ class GProjection(nn.Module):
         output = Q11 + Q21 + Q12 + Q22
         return output
 
-    def normalize_depth(self, depth, d_max, d_min):
+    @staticmethod
+    def normalize_depth(depth, d_max, d_min):
         z = (2 / (d_max - d_min) * (depth - d_min)) - 1
         z = torch.clamp(z, min=-1, max=1)
         return  z
@@ -102,7 +103,7 @@ class GProjection(nn.Module):
 
         feats = [inputs]
         for img_feature in img_features:
-            feats.append(self.project(resolution, img_feature, torch.stack([w, h, d_normed], dim=-1)))
+            feats.append(self.project(resolution, img_feature, torch.stack([d_normed, h, w], dim=-1)))
 
         output = torch.cat(feats, 2)
 
