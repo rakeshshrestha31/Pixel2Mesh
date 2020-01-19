@@ -62,7 +62,7 @@ options.model.z_threshold = 0
 # please follow experiments/tensorflow.yml
 options.model.align_with_tensorflow = False
 # skip connection type, one of [none, add, concat]
-options.model.gconv_skip_connection_type = 'concat'
+options.model.gconv_skip_connection = 'concat'
 
 options.loss = edict()
 options.loss.weights = edict()
