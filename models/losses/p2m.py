@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from models.layers.chamfer_wrapper import ChamferDist
 from models.layers.sample_points import PointSampler
+import numpy as np
 
 class P2MLoss(nn.Module):
     def __init__(self, options, ellipsoid, upsampled_chamfer_loss=False):
@@ -168,7 +169,7 @@ class P2MLoss(nn.Module):
 
         return loss, {
             "loss": loss,
-            "loss_chamfer": chamfer_loss,
+            "loss_chamfer": chamfer_loss / np.sum(self.options.weights.chamfer),
             "loss_edge": edge_loss,
             "loss_laplace": lap_loss,
             "loss_move": move_loss,
