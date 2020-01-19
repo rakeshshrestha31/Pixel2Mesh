@@ -27,6 +27,7 @@ class Evaluator(CheckpointRunner):
             CheckBest('f1_tau', 'best_test_f1_tau', is_loss=False),
             CheckBest('f1_2tau', 'best_test_f1_2tau', is_loss=False)
         ]
+        self.upsampled_chamfer_loss = options.test.upsampled_chamfer_loss
 
     # noinspection PyAttributeOutsideInit
     def init_fn(self, shared_model=None, **kwargs):
@@ -43,6 +44,11 @@ class Evaluator(CheckpointRunner):
         else:
             self.renderer = None
         self.num_classes = self.options.dataset.num_classes
+
+        self.p2m_loss = P2MLoss(
+            self.options.loss, self.ellipsoid,
+            self.options.test.upsampled_chamfer_loss
+        ).cuda()
 
         if shared_model is not None:
             self.model = shared_model
@@ -76,7 +82,8 @@ class Evaluator(CheckpointRunner):
             label = labels[i].cpu().item()
             self.depth_loss[label].update(P2MLoss.depth_loss(gt_depth, pred_depth, mask))
 
-    def evaluate_chamfer_and_f1(self, pred_vertices, gt_points, labels):
+    def evaluate_chamfer_and_f1(self, pred_vertices, pred_faces,
+                                gt_points, labels):
         # calculate accurate chamfer distance; ground truth points with different lengths;
         # therefore cannot be batched
         batch_size = pred_vertices.size(0)
@@ -84,7 +91,14 @@ class Evaluator(CheckpointRunner):
         for i in range(batch_size):
             gt_length = gt_points[i].size(0)
             label = labels[i].cpu().item()
-            d1, d2, i1, i2 = self.chamfer(pred_vertices[i].unsqueeze(0), gt_points[i].unsqueeze(0))
+            if self.upsampled_chamfer_loss:
+                d1, d2, i1, i2 = self.p2m_loss.upsampled_chamfer_dist(
+                    pred_vertices[i].unsqueeze(0),
+                    pred_faces.unsqueeze(0),
+                    gt_points[i].unsqueeze(0)
+                )
+            else:
+                d1, d2, i1, i2 = self.chamfer(pred_vertices[i].unsqueeze(0), gt_points[i].unsqueeze(0))
             d1, d2 = d1.cpu().numpy(), d2.cpu().numpy()  # convert to millimeter
             self.chamfer_distance[label].update(np.mean(d1) + np.mean(d2))
             self.f1_tau[label].update(self.evaluate_f1(d1, d2, pred_length, gt_length, 1E-4))
@@ -127,7 +141,11 @@ class Evaluator(CheckpointRunner):
                 # gt_points = input_batch["points"]
                 if isinstance(gt_points, list):
                     gt_points = [pts.cuda() for pts in gt_points]
-                self.evaluate_chamfer_and_f1(pred_vertices, gt_points, input_batch["labels"])
+                self.evaluate_chamfer_and_f1(
+                    pred_vertices,
+                    self.ellipsoid.faces[-1],
+                    gt_points, input_batch["labels"]
+                )
                 self.evaluate_depth_loss(out["depth"], input_batch["depth"],
                                          input_batch["mask"], input_batch["labels"])
             elif self.options.model.name == "classifier":

@@ -53,7 +53,7 @@ options.model.last_hidden_dim = 192
 options.model.coord_dim = 3
 # options.model.backbone = "vgg16"
 options.model.backbone = "encoder8"
-options.model.gconv_activation = True
+options.model.gconv_activation_type = True
 # provide a boundary for z, so that z will never be equal to 0, on denominator
 # if z is greater than 0, it will never be less than z;
 # if z is less than 0, it will never be greater than z.
@@ -76,6 +76,7 @@ options.loss.weights.chamfer_opposite = 1.
 options.loss.weights.reconst = 0.
 options.loss.weights.depth = 1e-4
 options.loss.only_depth_training = False
+options.loss.num_chamfer_upsample = 4000
 
 options.train = edict()
 options.train.num_epochs = 200
@@ -86,6 +87,7 @@ options.train.test_epochs = 5
 options.train.use_augmentation = True
 options.train.shuffle = True
 options.train.freeze_cv = False
+options.train.upsampled_chamfer_loss = False
 
 options.test = edict()
 options.test.dataset = []
@@ -93,6 +95,7 @@ options.test.summary_steps = 20
 options.test.batch_size = 32
 options.test.shuffle = False
 options.test.weighted_mean = False
+options.test.upsampled_chamfer_loss = False
 
 options.optim = edict()
 options.optim.name = "adam"
@@ -188,6 +191,10 @@ def reset_options(options, args, phase='train'):
         options.optim.lr_factor = args.lr_factor
     if hasattr(args, "lr_step") and args.lr_step is not None:
         options.optim.lr_step = args.lr_step
+    if hasattr(args, "train_upsampled_chamfer_loss") and args.train_upsampled_chamfer_loss is not None:
+        options.train.upsampled_chamfer_loss = args.train_upsampled_chamfer_loss
+    if hasattr(args, "test_upsampled_chamfer_loss") and args.test_upsampled_chamfer_loss is not None:
+        options.test.upsampled_chamfer_loss = args.test_upsampled_chamfer_loss
     if hasattr(args, "gconv_skip_connection") \
             and args.gconv_skip_connection is not None \
             and args.gconv_skip_connection.lower() in ['none', 'add', 'concat']:

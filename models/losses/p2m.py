@@ -3,10 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.layers.chamfer_wrapper import ChamferDist
-
+from models.layers.sample_points import PointSampler
 
 class P2MLoss(nn.Module):
-    def __init__(self, options, ellipsoid):
+    def __init__(self, options, ellipsoid, upsampled_chamfer_loss=False):
         super().__init__()
         self.options = options
         self.l1_loss = nn.L1Loss(reduction='mean')
@@ -16,6 +16,9 @@ class P2MLoss(nn.Module):
             nn.Parameter(idx, requires_grad=False) for idx in ellipsoid.laplace_idx])
         self.edges = nn.ParameterList([
             nn.Parameter(edges, requires_grad=False) for edges in ellipsoid.edges])
+        self.ellipsoid = ellipsoid
+        self.points_sampler = PointSampler(options.num_chamfer_upsample)
+        self.upsampled_chamfer_loss = upsampled_chamfer_loss
 
     def edge_regularization(self, pred, edges):
         """
@@ -80,6 +83,19 @@ class P2MLoss(nn.Module):
         mask = mask > 0.5
         return F.smooth_l1_loss(depth_est[mask], depth_gt[mask], size_average=True)
 
+    def upsampled_chamfer_dist(self, pred_coord, pred_faces, gt_coord):
+        # upsample the predicted mesh to get better chamfer distance
+        if pred_coord.size(1) < self.points_sampler.point_num:
+            upsampled_pred_coord, _ = self.points_sampler(
+                pred_coord, pred_faces
+            )
+        else:
+            upsampled_pred_coord = pred_coord
+        return self.chamfer_dist(
+            gt_coord,
+            upsampled_pred_coord
+        )
+
     def forward(self, outputs, targets):
         """
         :param outputs: outputs from P2MModel
@@ -100,10 +116,20 @@ class P2MLoss(nn.Module):
             image_loss = self.image_loss(gt_images, outputs["reconst"])
 
         for i in range(3):
-            dist1, dist2, idx1, idx2 = self.chamfer_dist(
-                gt_coord,
-                pred_coord[i]
-            )
+            if self.upsampled_chamfer_loss:
+                # repeat the faces for all items in the batch
+                faces = self.ellipsoid.faces[i] \
+                            .unsqueeze(0) \
+                            .repeat(pred_coord[0].size(0), 1, 1)
+
+                dist1, dist2, idx1, idx2 = self.upsampled_chamfer_dist(
+                    pred_coord[i], faces, gt_coord
+                )
+            else:
+                dist1, dist2, idx1, idx2 = self.chamfer_dist(
+                    gt_coord, pred_coord[i]
+                )
+
             chamfer_loss += self.options.weights.chamfer[i] * ( \
                 torch.mean(dist1) \
                 + self.options.weights.chamfer_opposite \

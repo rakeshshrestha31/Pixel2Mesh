@@ -71,7 +71,10 @@ class Trainer(CheckpointRunner):
 
         # Create loss functions
         if self.options.model.name == "pixel2mesh":
-            self.criterion = P2MLoss(self.options.loss, self.ellipsoid).cuda()
+            self.criterion = P2MLoss(
+                self.options.loss, self.ellipsoid,
+                self.options.train.upsampled_chamfer_loss
+            ).cuda()
         elif self.options.model.name == "classifier":
             self.criterion = CrossEntropyLoss()
         else:

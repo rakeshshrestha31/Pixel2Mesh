@@ -36,6 +36,10 @@ def parse_args():
     parser.add_argument('--lr', default=1e-4, help='initial learning rate', type=float)
     parser.add_argument('--lr-factor', default=0.1, help='learning rate factor', type=float)
     parser.add_argument('--lr-step', nargs='+', type=int)
+    parser.add_argument('--train-upsampled-chamfer-loss',
+                        dest='train_upsampled_chamfer_loss', action='store_true')
+    parser.add_argument('--test-upsampled-chamfer-loss',
+                        dest='test_upsampled_chamfer_loss', action='store_true')
     parser.add_argument('--gconv-skip-connection',
                         help='[none|add|concat]', type=str)
     parser.set_defaults(only_depth_training=False)
