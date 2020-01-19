@@ -53,7 +53,7 @@ options.model.last_hidden_dim = 192
 options.model.coord_dim = 3
 # options.model.backbone = "vgg16"
 options.model.backbone = "encoder8"
-options.model.gconv_activation_type = True
+options.model.gconv_activation = True
 # provide a boundary for z, so that z will never be equal to 0, on denominator
 # if z is greater than 0, it will never be less than z;
 # if z is less than 0, it will never be greater than z.
