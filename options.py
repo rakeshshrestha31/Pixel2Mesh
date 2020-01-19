@@ -61,6 +61,8 @@ options.model.z_threshold = 0
 # align with original tensorflow model
 # please follow experiments/tensorflow.yml
 options.model.align_with_tensorflow = False
+# skip connection type, one of [none, add, concat]
+options.model.gconv_skip_connection_type = 'concat'
 
 options.loss = edict()
 options.loss.weights = edict()
@@ -186,6 +188,10 @@ def reset_options(options, args, phase='train'):
         options.optim.lr_factor = args.lr_factor
     if hasattr(args, "lr_step") and args.lr_step is not None:
         options.optim.lr_step = args.lr_step
+    if hasattr(args, "gconv_skip_connection") \
+            and args.gconv_skip_connection is not None \
+            and args.gconv_skip_connection.lower() in ['none', 'add', 'concat']:
+        options.model.gconv_skip_connection = args.gconv_skip_connection.lower()
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
         # options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"
