@@ -99,7 +99,7 @@ class ShapeNet(BaseDataset):
         imgs_normalized = np.stack(imgs_normalized)
         proj_matrices = np.stack(proj_matrices)
 
-        mask = depth > 0.1
+        mask = (depth > 1e-7).float()
 
         depth_min = 0.1
         depth_interval = 0.025

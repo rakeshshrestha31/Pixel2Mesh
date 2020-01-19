@@ -53,7 +53,7 @@ options.model.last_hidden_dim = 192
 options.model.coord_dim = 3
 # options.model.backbone = "vgg16"
 options.model.backbone = "encoder8"
-options.model.gconv_activation = True
+options.model.gconv_activation_type = True
 # provide a boundary for z, so that z will never be equal to 0, on denominator
 # if z is greater than 0, it will never be less than z;
 # if z is less than 0, it will never be greater than z.
@@ -61,6 +61,8 @@ options.model.z_threshold = 0
 # align with original tensorflow model
 # please follow experiments/tensorflow.yml
 options.model.align_with_tensorflow = False
+# skip connection type, one of [none, add, concat]
+options.model.gconv_skip_connection = 'concat'
 
 options.loss = edict()
 options.loss.weights = edict()
@@ -193,6 +195,10 @@ def reset_options(options, args, phase='train'):
         options.train.upsampled_chamfer_loss = args.train_upsampled_chamfer_loss
     if hasattr(args, "test_upsampled_chamfer_loss") and args.test_upsampled_chamfer_loss is not None:
         options.test.upsampled_chamfer_loss = args.test_upsampled_chamfer_loss
+    if hasattr(args, "gconv_skip_connection") \
+            and args.gconv_skip_connection is not None \
+            and args.gconv_skip_connection.lower() in ['none', 'add', 'concat']:
+        options.model.gconv_skip_connection = args.gconv_skip_connection.lower()
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
         # options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"

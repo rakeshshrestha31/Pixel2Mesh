@@ -20,6 +20,7 @@ class P2MModel(nn.Module):
         self.last_hidden_dim = options.last_hidden_dim
         self.init_pts = nn.Parameter(ellipsoid.coord, requires_grad=False)
         self.gconv_activation = options.gconv_activation
+        self.gconv_skip_connection = options.gconv_skip_connection.lower()
 
         self.nn_encoder, self.nn_decoder = get_backbone(options, self.freeze_cv)
         self.features_dim = self.nn_encoder.features_dim + self.coord_dim
@@ -47,9 +48,11 @@ class P2MModel(nn.Module):
 
         self.gconv = GConv(in_features=self.last_hidden_dim, out_features=self.coord_dim,
                            adj_mat=ellipsoid.adj_mat[2])
-        self.gconv1 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[0])
-        self.gconv2 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[1])
-        self.gconv3 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[2])
+
+        if self.gconv_skip_connection == 'concat':
+            self.gconv1 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[0])
+            self.gconv2 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[1])
+            self.gconv3 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[2])
 
     def src2ref(self, pts, ref_proj, src_proj):
         with torch.no_grad():
@@ -80,8 +83,11 @@ class P2MModel(nn.Module):
         x = self.projection(img_shape, ref_feature, init_pts, depth_values)
         # x1 shape is torch.Size([16, 156, 3]), x_h
         x1, x_hidden = self.gcns[0](x)
-        x1 = self.gconv1(torch.cat((x1, init_pts), -1))
-        # x1 = x1 + init_pts[batch_idx]
+
+        if self.gconv_skip_connection == 'concat':
+            x1 = self.gconv1(torch.cat((x1, init_pts), -1))
+        elif self.gconv_skip_connection == 'add':
+            x1 = x1 + init_pts
 
         # before deformation 2
         x1_up = self.unpooling[0](x1)
@@ -93,9 +99,10 @@ class P2MModel(nn.Module):
 
         # after deformation 2
         x2, x_hidden = self.gcns[1](x)
-        # x2 = x2 + x1_up
-
-        x2 = self.gconv2(torch.cat((x2, x1_up), -1))
+        if self.gconv_skip_connection == 'concat':
+            x2 = self.gconv2(torch.cat((x2, x1_up), -1))
+        elif self.gconv_skip_connection == 'add':
+            x2 = x2 + x1_up
 
         # before deformation 3
         x2_up = self.unpooling[1](x2)
@@ -110,11 +117,13 @@ class P2MModel(nn.Module):
 
         if self.gconv_activation:
             x3 = F.relu(x3)
+
         # after deformation 3
         x3 = self.gconv(x3)
- #       x3 = x3 + x2_up
-
-        x3 = self.gconv3(torch.cat((x3, x2_up), -1))
+        if self.gconv_skip_connection == 'concat':
+            x3 = self.gconv3(torch.cat((x3, x2_up), -1))
+        elif self.gconv_skip_connection == 'add':
+            x3 = x3 + x2_up
 
         if self.nn_decoder is not None:
             reconst = self.nn_decoder(ref_feature)
