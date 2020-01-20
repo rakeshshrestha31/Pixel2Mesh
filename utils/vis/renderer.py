@@ -140,11 +140,12 @@ class MeshRenderer(object):
             image = batch_input["images_orig"][i].cpu().numpy()
             gt_depth = batch_input["depth"][i].cpu().numpy()
             pred_depth = batch_output["depth"][i].cpu().numpy()
+            mask = batch_input["mask"][i].cpu().numpy()
+            pred_depth *= mask
             depth_max = np.max(gt_depth)
             gt_depth = gt_depth / depth_max
             depth_max = np.max(pred_depth)
             pred_depth = pred_depth / depth_max
-            mask = batch_input["mask"][i].cpu().numpy()
             gt_points = batch_input["points"][i].cpu().numpy() + mesh_pos
             if len(image.shape) > 3:
                 image = image[0, :]
