@@ -103,7 +103,7 @@ class GProjection(nn.Module):
 
         feats = [inputs]
         for img_feature in img_features:
-            feats.append(self.project(resolution, img_feature, torch.stack([d_normed, h, w], dim=-1)))
+            feats.append(self.project(resolution, img_feature, torch.stack([w, h, d_normed], dim=-1)))
 
         output = torch.cat(feats, 2)
 

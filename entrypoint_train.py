@@ -33,8 +33,8 @@ def parse_args():
     parser.add_argument('--only-depth-training', dest='only_depth_training', action='store_true')
     parser.add_argument('--all-loss-training', dest='only_depth_training', action='store_false')
     parser.add_argument('--depth-loss-weight', help='depth loss weight', type=float)
-    parser.add_argument('--lr', default=1e-4, help='initial learning rate', type=float)
-    parser.add_argument('--lr-factor', default=0.1, help='learning rate factor', type=float)
+    parser.add_argument('--lr', help='initial learning rate', type=float)
+    parser.add_argument('--lr-factor', help='learning rate factor', type=float)
     parser.add_argument('--lr-step', nargs='+', type=int)
     parser.add_argument('--train-upsampled-chamfer-loss',
                         dest='train_upsampled_chamfer_loss', action='store_true')
