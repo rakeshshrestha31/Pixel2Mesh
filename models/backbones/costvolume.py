@@ -155,7 +155,7 @@ class MVSNet(nn.Module):
         self.freeze_cv = freeze_cv
         self.feature = VGG16P2M()
         # self.features_dim = 960# + 191
-        self.features_dim = 120
+        self.features_dim = 960 # 120
 
         # self.features_dim = 384
         self.cost_regularization = CostRegNet()
@@ -323,33 +323,33 @@ class ConvBnReLU3D(nn.Module):
 class CostRegNet(nn.Module):
     def __init__(self):
         super(CostRegNet, self).__init__()
-        self.conv0 = ConvBnReLU3D(64, 8)
+        self.conv0 = ConvBnReLU3D(64, 64)
 
-        self.conv1 = ConvBnReLU3D(8, 16, stride=2)
-        self.conv2 = ConvBnReLU3D(16, 16)
+        self.conv1 = ConvBnReLU3D(64, 128, stride=2)
+        self.conv2 = ConvBnReLU3D(128, 128)
 
-        self.conv3 = ConvBnReLU3D(16, 32, stride=2)
-        self.conv4 = ConvBnReLU3D(32, 32)
+        self.conv3 = ConvBnReLU3D(128, 256, stride=2)
+        self.conv4 = ConvBnReLU3D(256, 256)
 
-        self.conv5 = ConvBnReLU3D(32, 64, stride=2)
-        self.conv6 = ConvBnReLU3D(64, 64)
+        self.conv5 = ConvBnReLU3D(256, 512, stride=2)
+        self.conv6 = ConvBnReLU3D(512, 512)
 
         self.conv7 = nn.Sequential(
-            nn.ConvTranspose3d(64, 32, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
-            nn.BatchNorm3d(32),
+            nn.ConvTranspose3d(512, 256, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(256),
             nn.ReLU(inplace=True))
 
         self.conv9 = nn.Sequential(
-            nn.ConvTranspose3d(32, 16, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
-            nn.BatchNorm3d(16),
+            nn.ConvTranspose3d(256, 128, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(128),
             nn.ReLU(inplace=True))
 
         self.conv11 = nn.Sequential(
-            nn.ConvTranspose3d(16, 8, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
-            nn.BatchNorm3d(8),
+            nn.ConvTranspose3d(128, 64, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(64),
             nn.ReLU(inplace=True))
 
-        self.prob = nn.Conv3d(8, 1, 3, stride=1, padding=1)
+        self.prob = nn.Conv3d(64, 1, 3, stride=1, padding=1)
         self.channelpool = ChannelPool()
 
     def forward(self, x):
