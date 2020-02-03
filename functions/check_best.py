@@ -4,8 +4,8 @@ class CheckBest:
         self.metric_name = metric_name
         self.best = float('inf') if is_loss else \
                     -float('inf')
-        self.is_best = lambda x: x < self.best if is_loss else \
-                  lambda x: x > self.best
+        self.is_best = (lambda x: x < self.best) if is_loss else \
+                  (lambda x: x > self.best)
 
     def check_best(self, x):
         if self.is_best(x):
