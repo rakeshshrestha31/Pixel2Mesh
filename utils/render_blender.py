@@ -134,6 +134,8 @@ def render_object(obj_category):
     normal_mesh_file = '/tmp/model_normal_{}_{}.obj'.format(obj, category)
     rendering_metadata_file = '{}/{}/{}/rendering/rendering_metadata.txt' \
                                 .format(args.rendering_dir, obj, category)
+    rendering_metadata = np.loadtxt(rendering_metadata_file)
+
     depth_dir = '{}/{}/{}/rendering_depth' \
                     .format(args.rendering_dir, obj, category)
     os.makedirs(depth_dir, exist_ok=True)
@@ -142,8 +144,15 @@ def render_object(obj_category):
     #     return
 
     # avoid already (recently) rendered files
-    depth_file = os.path.join(depth_dir, '00.png')
-    if os.path.isfile(depth_file): # and time.time() - os.path.getmtime(depth_file) < 27500:
+    depth_files = [
+        os.path.join(depth_dir, '{0:02}.png'.format(i))
+        for i in range(len(rendering_metadata))
+    ]
+    depth_files_available = [
+        os.path.isfile(depth_file) for depth_file in depth_files
+    ]
+    if np.all(depth_files_available):
+        print('skipping', depth_dir)
         return
 
     print('Working with ', obj, category)
@@ -178,16 +187,19 @@ def render_object(obj_category):
         print('[Error] Unable to load mesh', normal_mesh_file, str(e))
         return
 
-    rendering_metadata = np.loadtxt(rendering_metadata_file)
-
     for view_id, extrinsics in enumerate(rendering_metadata):
+        depth_file_prefix = os.path.join(
+            depth_dir, '{0:02}'.format(view_id)
+        )
+
+        # avoid doing it again if done already
+        if os.path.isfile(depth_file_prefix + '.png'):
+            continue
+
         R, t = camera_mat(extrinsics)
         proj_mat = projection_mat(R, t)
         proj_mat_str = np.char.mod('%f', proj_mat.flatten()).tolist()
 
-        depth_file_prefix = os.path.join(
-            depth_dir, '{0:02}'.format(view_id)
-        )
         print('writing', depth_file_prefix)
         subprocess.run([
             'python', args.xms_exec,
@@ -206,8 +218,6 @@ def render_object(obj_category):
             print('written', depth_file_prefix)
         else:
             print('[Error] unable to render', depth_file_prefix)
-
-        break
 
     remove_mesh_file(normal_mesh_file)
     remove_mesh_file(scaled_mesh_file)
