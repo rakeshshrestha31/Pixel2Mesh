@@ -119,6 +119,12 @@ def projection_mat(R, t):
     ])
     return np.matmul(P, T)
 
+def remove_mesh_file(mesh_filename):
+    os.remove(mesh_filename)
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(mesh_filename.replace('.obj', '.mtl'))
+        os.remove(mesh_filename.replace('.obj', '.png'))
+
 def render_object(obj_category):
     obj, category = obj_category
     original_mesh_file = os.path.join(
@@ -144,8 +150,8 @@ def render_object(obj_category):
     print('mesh file ', original_mesh_file)
 
     with contextlib.suppress(FileNotFoundError):
-        os.remove(normal_mesh_file)
-        os.remove(scaled_mesh_file)
+        remove_mesh_file(normal_mesh_file)
+        remove_mesh_file(scaled_mesh_file)
 
     # find mesh with normal
     subprocess.run([
@@ -203,8 +209,8 @@ def render_object(obj_category):
 
         break
 
-    os.remove(normal_mesh_file)
-    os.remove(scaled_mesh_file)
+    remove_mesh_file(normal_mesh_file)
+    remove_mesh_file(scaled_mesh_file)
 
 # multi-processing stuffs
 NCORE = 8
