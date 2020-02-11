@@ -8,10 +8,10 @@ from PIL import Image
 from skimage import io, transform
 from torch.utils.data.dataloader import default_collate
 import cv2
+import json
 
 import config
 from datasets.base_dataset import BaseDataset
-
 
 class ShapeNet(BaseDataset):
     """
@@ -27,6 +27,10 @@ class ShapeNet(BaseDataset):
         # Read file list
         with open(os.path.join(self.file_root, "meta", file_list_name + ".txt"), "r") as fp:
             self.file_names = fp.read().split("\n")[:-1]
+        # read best views
+        with open(os.path.join(self.file_root, "meta", "best_subset_p2mpp.json"), "r") as fp:
+            self.best_views = json.load(fp)
+
         self.tensorflow = "_tf" in file_list_name # tensorflow version of data
         self.normalization = normalization
         self.mesh_pos = mesh_pos
@@ -59,7 +63,8 @@ class ShapeNet(BaseDataset):
         imgs_normalized = []
         proj_matrices = []
         proj_mat = np.zeros(shape=(2, 4, 4), dtype=np.float32)
-        for idx, view in enumerate([0, 6, 7]):
+        for idx, view in \
+                enumerate(self.best_views[label + '/' + label_appendix]):
             img = io.imread(os.path.join(img_path, str(view).zfill(2) + '.png'))
             img[np.where(img[:, :, 3] == 0)] = 255
             img = transform.resize(img, (config.IMG_SIZE, config.IMG_SIZE))
