@@ -39,7 +39,7 @@ def project_pixel_coords(x, y, depth_values, src_proj, ref_proj, batch):
     rot_depth_xyz = rot_xyz.unsqueeze(2).repeat(1, 1, num_depth, 1) * depth_values.view(batch, 1, num_depth,
                                                                                         -1)  # [B, 3, Ndepth, H*W]
     proj_xyz = rot_depth_xyz + trans.view(batch, 3, 1, 1)  # [B, 3, Ndepth, H*W]
-    proj_xy = proj_xyz[:, :2, :, :] / (proj_xyz[:, 2:3, :, :]) # + 0.0001)  # [B, 2, Ndepth, H*W]
+    proj_xy = proj_xyz[:, :2, :, :] / (proj_xyz[:, 2:3, :, :] + 0.0001)  # [B, 2, Ndepth, H*W]
 
     return proj_xy
 

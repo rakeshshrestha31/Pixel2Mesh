@@ -79,10 +79,20 @@ class P2MLoss(nn.Module):
         rect_loss = F.binary_cross_entropy(pred_img, gt_img)
         return rect_loss
 
+    def get_tensor_device(tensor):
+        device = tensor.get_device()
+        device = torch.device('cpu') if device < 0 else torch.device(device)
+        return device
+
     @staticmethod
     def depth_loss(depth_gt, depth_est, mask):
         mask = mask > 0.5
-        return F.smooth_l1_loss(depth_est[mask], depth_gt[mask], size_average=True)
+        if torch.all(mask == 0):
+            return torch.tensor(0.0, dtype=depth_gt.dtype,
+                                device=P2MLoss.get_tensor_device(depth_gt))
+        else:
+            return F.smooth_l1_loss(depth_est[mask], depth_gt[mask],
+                                    size_average=True)
 
     def upsampled_chamfer_dist(self, pred_coord, pred_faces, gt_coord):
         # upsample the predicted mesh to get better chamfer distance
