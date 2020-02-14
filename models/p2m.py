@@ -135,5 +135,5 @@ class P2MModel(nn.Module):
             "pred_coord": [x1, x2, x3],
             "pred_coord_before_deform": [init_pts, x1_up, x2_up],
             "reconst": reconst,
-            "depth": out_encoder["depth"],
+            "depth": out_encoder["depths"][0],
         }

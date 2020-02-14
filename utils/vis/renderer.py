@@ -138,9 +138,9 @@ class MeshRenderer(object):
         mesh_pos = np.array(self.mesh_pos)
         for i in range(batch_size):
             image = batch_input["images_orig"][i].cpu().numpy()
-            gt_depth = batch_input["depth"][i].cpu().numpy()
+            gt_depth = batch_input["depths"][i, 0].cpu().numpy()
             pred_depth = batch_output["depth"][i].cpu().numpy()
-            mask = batch_input["mask"][i].cpu().numpy()
+            mask = batch_input["masks"][i, 0].cpu().numpy()
             pred_depth *= mask
             depth_max = np.max(gt_depth)
             gt_depth = gt_depth / depth_max

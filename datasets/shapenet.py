@@ -60,41 +60,30 @@ class ShapeNet(BaseDataset):
 
         camera_meta_data = np.loadtxt(os.path.join(img_path, 'rendering_metadata.txt'))
         imgs = []
+        depths = []
         imgs_normalized = []
         proj_matrices = []
         proj_mat = np.zeros(shape=(2, 4, 4), dtype=np.float32)
+        proj_mat[0, 3, 3] = 1
+        proj_mat[1, 2, 2] = 1
+
         for idx, view in \
                 enumerate(self.best_views[label + '/' + label_appendix]):
-            img = io.imread(os.path.join(img_path, str(view).zfill(2) + '.png'))
-            img[np.where(img[:, :, 3] == 0)] = 255
-            img = transform.resize(img, (config.IMG_SIZE, config.IMG_SIZE))
-            img = img[:, :, :3].astype(np.float32)
+            img_file = os.path.join(img_path, str(view).zfill(2) + '.png')
+            img = self.read_image(img_file)
+            img_normalized = self.normalize_img(img.clone()) \
+                                if self.normalization else img
 
-            img = torch.from_numpy(np.transpose(img, (2, 0, 1)))
-            img_normalized = self.normalize_img(img.clone()) if self.normalization else img
+            depth_file = os.path.join(depth_path, str(view).zfill(2) + '.png')
+            depth = self.read_depth(depth_file)
 
-            if idx == 0:
-                depth_file = os.path.join(depth_path, str(view).zfill(2) + '.png')
-                if os.path.isfile(depth_file):
-                    depth = cv2.imread(depth_file, cv2.IMREAD_ANYDEPTH)
-                    depth = cv2.resize(depth, (config.IMG_SIZE//4, config.IMG_SIZE//4))
-                    depth = depth.astype(np.float32) / 1000
-                    depth = torch.from_numpy(depth)
-                else:
-                    depth = torch.from_numpy(
-                        # np.ones((config.IMG_SIZE // 4, config.IMG_SIZE // 4), dtype=np.float32)
-                        np.random.random((config.IMG_SIZE//4, config.IMG_SIZE//4)).astype(np.float32)
-                    )
-
-            camR, camT = self.cameraMat(camera_meta_data[view])
-            proj_mat[0, :3, :3] = camR
-            proj_mat[0, :3, 3] = -np.matmul(camR, camT)
-            proj_mat[0, -1, -1] = 1
+            proj_mat[0, :4, :4] = self.read_camera_mat(camera_meta_data[view])
             proj_mat[1, :3, :3] = self.intrinsics
-            proj_mat[1, 2, 2] = 1
-            proj_matrices.append(proj_mat.astype(np.float32))
+
+            proj_matrices.append(proj_mat.copy())
             imgs_normalized.append(img_normalized)
             imgs.append(img)
+            depths.append(depth)
 
         pts -= np.array(self.mesh_pos)
         assert pts.shape[0] == normals.shape[0]
@@ -104,7 +93,8 @@ class ShapeNet(BaseDataset):
         imgs_normalized = np.stack(imgs_normalized)
         proj_matrices = np.stack(proj_matrices)
 
-        mask = (depth > 1e-7).float()
+        depths = torch.stack(depths, dim=0)
+        masks = (depths > 1e-7).float()
 
         depth_min = 0.1
         depth_interval = 0.025
@@ -121,9 +111,37 @@ class ShapeNet(BaseDataset):
             "length": length,
             "proj_matrices": proj_matrices,
             "depth_values": depth_values,
-            "depth": depth,
-            "mask": mask
+            "depths": depths,
+            "masks": masks
         }
+
+    @staticmethod
+    def read_image(img_file):
+        img = io.imread(img_file)
+        img[np.where(img[:, :, 3] == 0)] = 255
+        img = transform.resize(img, (config.IMG_SIZE, config.IMG_SIZE))
+        img = img[:, :, :3].astype(np.float32)
+        img = torch.from_numpy(np.transpose(img, (2, 0, 1)))
+        return img
+
+    @staticmethod
+    def read_depth(depth_file):
+        if os.path.isfile(depth_file):
+            depth = cv2.imread(depth_file, cv2.IMREAD_ANYDEPTH)
+            depth = cv2.resize(depth, (config.IMG_SIZE//4, config.IMG_SIZE//4))
+            depth = depth.astype(np.float32) / 1000
+            depth = torch.from_numpy(depth)
+            return depth
+        else:
+            print('depth file not found:', depth_file)
+            exit(1)
+
+    def read_camera_mat(self, meta_data_file):
+        camR, camT = self.cameraMat(meta_data_file)
+        camera_mat = np.eye(4, 4, dtype=np.float32)
+        camera_mat[:3, :3] = camR
+        camera_mat[:3, 3] = -np.matmul(camR, camT)
+        return camera_mat
 
     def __len__(self):
         return len(self.file_names)

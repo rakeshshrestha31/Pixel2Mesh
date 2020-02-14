@@ -146,8 +146,10 @@ class Evaluator(CheckpointRunner):
                     self.ellipsoid.faces[-1],
                     gt_points, input_batch["labels"]
                 )
-                self.evaluate_depth_loss(out["depth"], input_batch["depth"],
-                                         input_batch["mask"], input_batch["labels"])
+                self.evaluate_depth_loss(
+                    out["depth"], input_batch["depths"][:, 0],
+                    input_batch["masks"][:, 0], input_batch["labels"]
+                )
             elif self.options.model.name == "classifier":
                 self.evaluate_accuracy(out, input_batch["labels"])
 
