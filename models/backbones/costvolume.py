@@ -3,6 +3,8 @@ import torch.nn as nn
 from torch.nn import MaxPool1d
 import torch.nn.functional as F
 
+import numpy as np
+
 import config
 
 def project_pixel_coords(x, y, depth_values, src_proj, ref_proj, batch):
@@ -154,15 +156,18 @@ class MVSNet(nn.Module):
 
         self.freeze_cv = freeze_cv
         self.feature = VGG16P2M()
-        # self.features_dim = 960# + 191
-        self.features_dim = 960 # 120
 
-        # self.features_dim = 384
         self.cost_regularization = CostRegNet()
+
+        # self.features_dim = 960# + 191
+        # self.features_dim = 384
+        # self.features_dim = 960 # 120
+        self.features_dim = np.sum(self.cost_regularization.features_list)
 
         for param in self.parameters():
             param.requires_grad = not self.freeze_cv
         print("==> cost volume weight require_grad is:", not self.freeze_cv)
+        print("==> number of cost volume features:", self.features_dim)
 
 
     ## Newer batched method of getting features
@@ -365,33 +370,34 @@ class ConvBnReLU3D(nn.Module):
 class CostRegNet(nn.Module):
     def __init__(self):
         super(CostRegNet, self).__init__()
-        self.conv0 = ConvBnReLU3D(64, 64)
+        self.features_list = [64, 128, 256, 512]
+        self.conv0 = ConvBnReLU3D(64, self.features_list[0])
 
-        self.conv1 = ConvBnReLU3D(64, 128, stride=2)
-        self.conv2 = ConvBnReLU3D(128, 128)
+        self.conv1 = ConvBnReLU3D(self.features_list[0], self.features_list[1], stride=2)
+        self.conv2 = ConvBnReLU3D(self.features_list[1], self.features_list[1])
 
-        self.conv3 = ConvBnReLU3D(128, 256, stride=2)
-        self.conv4 = ConvBnReLU3D(256, 256)
+        self.conv3 = ConvBnReLU3D(self.features_list[1], self.features_list[2], stride=2)
+        self.conv4 = ConvBnReLU3D(self.features_list[2], self.features_list[2])
 
-        self.conv5 = ConvBnReLU3D(256, 512, stride=2)
-        self.conv6 = ConvBnReLU3D(512, 512)
+        self.conv5 = ConvBnReLU3D(self.features_list[2], self.features_list[3], stride=2)
+        self.conv6 = ConvBnReLU3D(self.features_list[3], self.features_list[3])
 
         self.conv7 = nn.Sequential(
-            nn.ConvTranspose3d(512, 256, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
-            nn.BatchNorm3d(256),
+            nn.ConvTranspose3d(self.features_list[3], self.features_list[2], kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(self.features_list[2]),
             nn.ReLU(inplace=True))
 
         self.conv9 = nn.Sequential(
-            nn.ConvTranspose3d(256, 128, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
-            nn.BatchNorm3d(128),
+            nn.ConvTranspose3d(self.features_list[2], self.features_list[1], kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(self.features_list[1]),
             nn.ReLU(inplace=True))
 
         self.conv11 = nn.Sequential(
-            nn.ConvTranspose3d(128, 64, kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
-            nn.BatchNorm3d(64),
+            nn.ConvTranspose3d(self.features_list[1], self.features_list[0], kernel_size=3, padding=1, output_padding=1, stride=2, bias=False),
+            nn.BatchNorm3d(self.features_list[0]),
             nn.ReLU(inplace=True))
 
-        self.prob = nn.Conv3d(64, 1, 3, stride=1, padding=1)
+        self.prob = nn.Conv3d(self.features_list[0], 1, 3, stride=1, padding=1)
         self.channelpool = ChannelPool()
 
     def forward(self, x):
