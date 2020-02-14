@@ -225,6 +225,25 @@ class MVSNet(nn.Module):
         # step 1. feature extraction
         # in: images; out: 32-channel feature maps
         features = self.get_features_batched(imgs)
+
+        # all the views should be treated as ref_features iteratively
+        view_lists = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
+        costvolume_outputs = {'features': [], 'depths': []}
+
+        for view_list in view_lists:
+            reordered_features = [features[i] for i in view_list]
+            reordered_proj_matrices = [proj_matrices[i] for i in view_list]
+            costvolume_output = self.compute_costvolume_depth(
+                reordered_features, reordered_proj_matrices, depth_values
+            )
+            costvolume_outputs['features'].append(costvolume_output['features'])
+            costvolume_outputs['depths'].append(costvolume_output['depth'])
+        return costvolume_outputs
+
+
+    def compute_costvolume_depth(self, features, proj_matrices, depth_values):
+        num_views = len(features)
+        num_depth = depth_values.shape[1]
         ref_feature = features[0][0]
         src_features = []
         for i in range(len(features[1:3])):
@@ -239,15 +258,6 @@ class MVSNet(nn.Module):
         # volume_sq_sum = ref_volume.pow_(2)
         del ref_volume
         for src_fea, src_proj in zip(src_features, src_projs):
-            #
-            # src_proj[:, 1, :2, :3] = src_proj[:, 1, :2, :3] / 2.
-            # ref_proj[:, 1, :2, :3] = ref_proj[:, 1, :2, :3] / 2.
-            #
-            # src_proj_new = src_proj[:, 0].clone()
-            # src_proj_new[:, :3, :4] = torch.matmul(src_proj[:, 1, :3, :3], src_proj[:, 0, :3, :4])
-            # ref_proj_new = ref_proj[:, 0].clone()
-            # ref_proj_new[:, :3, :4] = torch.matmul(ref_proj[:, 1, :3, :3], ref_proj[:, 0, :3, :4])
-            #
             # warpped features
             warped_volume = homo_warping(src_fea, src_proj, ref_proj, depth_values)
             if self.training:

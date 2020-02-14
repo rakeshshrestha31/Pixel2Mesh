@@ -73,7 +73,7 @@ class P2MModel(nn.Module):
         proj_list = torch.unbind(proj, 1)
         num_views = len(img_list)
         out_encoder = self.nn_encoder(img, proj_list, depth_values)
-        feature_list = out_encoder["features"]#[self.nn_encoder(i) for i in img_list]
+        feature_list = out_encoder["features"][0] #[self.nn_encoder(i) for i in img_list]
         ref_feature, src_feature_list = feature_list[0], feature_list[1:]
         ref_proj, src_proj_list       = proj_list[0], proj_list[1:]
 
