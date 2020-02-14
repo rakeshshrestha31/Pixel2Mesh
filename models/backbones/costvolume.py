@@ -165,19 +165,61 @@ class MVSNet(nn.Module):
         print("==> cost volume weight require_grad is:", not self.freeze_cv)
 
 
+    ## Newer batched method of getting features
+    #  @detail Even with all the mucking around with tensors and lists shapes,
+    #           it's still 2.5x faster than old get_features_unbatched
+    #  @param imgs tensor of size batch x views x channel x height x width
+    #  @return 2D list of size num_views x num_features.
+    #           each item is batch x channels x h x w tensor
+    def get_features_batched(self, imgs):
+        debug = False
+        batches, views = imgs.size()[:2]
+        flattened_imgs = imgs.view(batches * views, *(imgs.size()[2:]))
+        # list of (batches*views) x channels x h x w tensors
+        flattened_features = self.feature(flattened_imgs)
+        # list of views x batches x channels x h x w tensors
+        features = [i.view(batches, views, *(i.size()[1:])).transpose(1, 0)
+                    for i in flattened_features]
+        # list of num_features x num_views tensors.
+        # Each item is batch x channels x h x w tensors
+        features = [feature.unbind(0) for feature in features]
+        # transpose: dim = num_views x num_features
+        features = [
+            [ features[i][j] for i in range(len(features)) ]
+            for j in range(len(features[0]))
+        ]
+
+        if debug:
+            features_unbatched = self.get_features_unbatched(imgs)
+            # this method and get_features_unbatched get same results
+            # but this method is 2.5x faster
+            print('eq:',
+                [[torch.all(torch.abs(k -l) < 1e-4).item() for k, l in zip(i, j)]
+                 for i, j in zip(features, features_unbatched)]
+            )
+
+        return features
+
+
+    ## Older unbatched method of getting features
+    #  @param imgs tensor of size batch x views x channel x height x width
+    #  @return 2D list of size batch x num_features
+    def get_features_unbatched(self, imgs):
+        imgs_list = imgs.unbind(1)
+        features = [self.feature(img) for img in imgs_list]
+        return features
+
 
     def forward(self, imgs, proj_matrices, depth_values=None):
 
         # imgs = torch.unbind(imgs, 1)
         # proj_matrices = torch.unbind(proj_matrices, 1)
         # assert len(imgs) == len(proj_matrices), "Different number of images and projection matrices"
-        img_height, img_width = imgs[0].shape[2], imgs[0].shape[3]
-        num_depth = depth_values.shape[1]
-        num_views = len(imgs)
+        img_height, img_width = imgs.shape[-2], imgs[0].shape[-1]
 
         # step 1. feature extraction
         # in: images; out: 32-channel feature maps
-        features = [self.feature(img) for img in imgs]
+        features = self.get_features_batched(imgs)
         ref_feature = features[0][0]
         src_features = []
         for i in range(len(features[1:3])):
