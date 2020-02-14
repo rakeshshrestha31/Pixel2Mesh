@@ -6,7 +6,7 @@ import os
 import cv2
 import numpy as np
 from skimage import io, transform
-import json
+import h5py
 import tqdm
 
 # custom imports
@@ -25,8 +25,14 @@ colors = torch.tensor(
 )
 
 def select_maximum_fov(file_root, debug=False):
-    # dictionary from scene to best subset
-    best_subsets = {}
+    best_subsets = {
+        'files': [],
+        # for each file, there is a 3-tuple of best views
+        'subsets': [],
+        # for each file, there are three sets of points at different densities
+        # each have different assignments
+        'assignments': [[], [], []]
+    }
 
     # create ellipsoid
     ellipsoid = Ellipsoid([0.0, 0.0, 0.0])
@@ -75,10 +81,10 @@ def select_maximum_fov(file_root, debug=False):
                 for pts in ellipsoid_pts
             ]
 
-            best_subsets[key] = {}
-            best_subsets[key]['subsets'] = best_subset
-            best_subsets[key]['assignment'] = \
-                    [i.cpu().tolist() for i in assignments]
+            best_subsets['files'].append(key.encode("ascii", "ignore"))
+            best_subsets['subsets'].append(best_subset)
+            for i, assignment in enumerate(assignments):
+                best_subsets['assignments'][i].append(assignment.cpu().tolist())
 
             if debug:
                 best_images.extend([imgs[i] for i in best_subset])
@@ -88,11 +94,29 @@ def select_maximum_fov(file_root, debug=False):
                         (label, label_appendix, str(pts_idx))
                     )
                     draw_cameras(best_T_cams_world, (label, label_appendix))
-                if len(best_subsets) > 10:
+                if len(best_subsets['files']) > 10:
                     break
 
-    with open('/tmp/best_subsets.json', 'w') as f:
-        json.dump(best_subsets, f, indent=4)
+    return write_best_subsets(best_subsets)
+
+
+def write_best_subsets(best_subsets):
+    num_files = len(best_subsets['files'])
+    max_file_len = np.max([len(i) for i in best_subsets['files']])
+
+    with h5py.File('/tmp/best_subsets_max_fov.hdf5', 'w') as h5_file:
+        h5_files = h5_file.create_dataset(
+            'files', (num_files,), 'S%d' % max_file_len,
+            best_subsets['files']
+        )
+        h5_subsets = h5_file.create_dataset(
+            "subsets", (num_files, 3), 'i', best_subsets['subsets']
+        )
+        for i, assignment in enumerate(best_subsets['assignments']):
+            h5_assignments = h5_file.create_dataset(
+                "assignment%d" % i, (num_files, len(assignment[0])),
+                'i', assignment
+            )
 
 
 ##
@@ -201,9 +225,7 @@ def to_one_hot(tensor, n):
 
 
 def get_tensor_device(tensor):
-    device = tensor.get_device()
-    device = 'cpu' if device < 0 else torch.device(device)
-    return device
+    return tensor.get_device() if tensor.is_cuda else torch.device('cpu')
 
 
 ##
