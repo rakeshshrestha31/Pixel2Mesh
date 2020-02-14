@@ -106,9 +106,11 @@ class Trainer(CheckpointRunner):
         images = input_batch["images"]
         proj_matrices = input_batch["proj_matrices"]
         depth_values = input_batch["depth_values"]
+        points_assignments = self.dataset.get_points_assignments(input_batch)
 
         # predict with model
-        out = self.model(images, proj_matrices, depth_values)
+        out = self.model(images, proj_matrices,
+                         depth_values, points_assignments)
 
         # compute loss
         loss, loss_summary = self.criterion(out, input_batch)

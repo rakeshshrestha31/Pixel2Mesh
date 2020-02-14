@@ -167,7 +167,8 @@ class MVSNet(nn.Module):
         for param in self.parameters():
             param.requires_grad = not self.freeze_cv
         print("==> cost volume weight require_grad is:", not self.freeze_cv)
-        print("==> number of cost volume features:", self.features_dim)
+        print("==> number of cost volume features:",
+              self.cost_regularization.features_list, self.features_dim)
 
 
     ## Newer batched method of getting features
@@ -238,6 +239,9 @@ class MVSNet(nn.Module):
             )
             costvolume_outputs['features'].append(costvolume_output['features'])
             costvolume_outputs['depths'].append(costvolume_output['depth'])
+
+        costvolume_outputs['depths'] = torch.stack(costvolume_outputs['depths'],
+                                                   dim=1)
         return costvolume_outputs
 
 
@@ -282,7 +286,7 @@ class MVSNet(nn.Module):
         # add cost aggregated feature
         features[0] = []
         features[0] = cost_agg_feature
-        return {"features": features, "depth":depth}
+        return {"features": features, "depth": depth}
 
 class VGG16P2M(nn.Module):
 
@@ -380,7 +384,7 @@ class ConvBnReLU3D(nn.Module):
 class CostRegNet(nn.Module):
     def __init__(self):
         super(CostRegNet, self).__init__()
-        self.features_list = [64, 128, 256, 512]
+        self.features_list = [32, 64, 128, 256]
         self.conv0 = ConvBnReLU3D(64, self.features_list[0])
 
         self.conv1 = ConvBnReLU3D(self.features_list[0], self.features_list[1], stride=2)

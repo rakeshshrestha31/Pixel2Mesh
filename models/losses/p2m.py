@@ -89,7 +89,8 @@ class P2MLoss(nn.Module):
         mask = mask > 0.5
         if torch.all(mask == 0):
             return torch.tensor(0.0, dtype=depth_gt.dtype,
-                                device=P2MLoss.get_tensor_device(depth_gt))
+                                device=P2MLoss.get_tensor_device(depth_gt),
+                                requires_grad=depth_gt.requires_grad)
         else:
             return F.smooth_l1_loss(depth_est[mask], depth_gt[mask],
                                     size_average=True)
@@ -119,10 +120,10 @@ class P2MLoss(nn.Module):
 
         gt_coord, gt_normal, \
             gt_images = targets["points"], targets["normals"], targets["images"]
-        gt_depth, mask = targets["depths"][:, 0], targets["masks"][:, 0]
+        gt_depths, masks = targets["depths"], targets["masks"]
         pred_coord = outputs["pred_coord"]
         pred_coord_before_deform = outputs["pred_coord_before_deform"]
-        pred_depth = outputs["depth"]
+        pred_depths = outputs["depths"]
         image_loss = 0.
 
         # TODO uncommit this line
@@ -164,7 +165,10 @@ class P2MLoss(nn.Module):
             lap_loss += lap_const[i] * lap
             move_loss += lap_const[i] * move
 
-        depth_loss += self.depth_loss(gt_depth, pred_depth, mask)
+        depth_loss += self.depth_loss(gt_depths, pred_depths, masks)
+        # normalize to make the unit consistent with since scale one
+        depth_loss /= len(gt_depths)
+
         #
         if self.options.only_depth_training:
             loss = depth_loss

@@ -9,6 +9,7 @@ from skimage import io, transform
 from torch.utils.data.dataloader import default_collate
 import cv2
 import json
+import h5py
 
 import config
 from datasets.base_dataset import BaseDataset
@@ -28,8 +29,9 @@ class ShapeNet(BaseDataset):
         with open(os.path.join(self.file_root, "meta", file_list_name + ".txt"), "r") as fp:
             self.file_names = fp.read().split("\n")[:-1]
         # read best views
-        with open(os.path.join(self.file_root, "meta", "best_subset_p2mpp.json"), "r") as fp:
-            self.best_views = json.load(fp)
+        self.best_views = self.read_best_subsets_file(
+            os.path.join(self.file_root, "meta", "best_subsets_max_fov.hdf5")
+        )
 
         self.tensorflow = "_tf" in file_list_name # tensorflow version of data
         self.normalization = normalization
@@ -67,8 +69,9 @@ class ShapeNet(BaseDataset):
         proj_mat[0, 3, 3] = 1
         proj_mat[1, 2, 2] = 1
 
-        for idx, view in \
-                enumerate(self.best_views[label + '/' + label_appendix]):
+        view_key = '%s/%s' % (label, label_appendix)
+        views = self.best_views['subsets'][view_key]
+        for idx, view in enumerate(views):
             img_file = os.path.join(img_path, str(view).zfill(2) + '.png')
             img = self.read_image(img_file)
             img_normalized = self.normalize_img(img.clone()) \
@@ -88,6 +91,14 @@ class ShapeNet(BaseDataset):
         pts -= np.array(self.mesh_pos)
         assert pts.shape[0] == normals.shape[0]
         length = pts.shape[0]
+
+        # assignment of each point to a view (at different point densities)
+        points_to_view_assignments = {
+            'assignment%d' % i: \
+                np.asarray(self.best_views['assignment%d' % i][view_key],
+                           dtype=np.int32)
+            for i in range(3)
+        }
 
         imgs = np.stack(imgs)
         imgs_normalized = np.stack(imgs_normalized)
@@ -112,8 +123,41 @@ class ShapeNet(BaseDataset):
             "proj_matrices": proj_matrices,
             "depth_values": depth_values,
             "depths": depths,
-            "masks": masks
+            "masks": masks,
+            **points_to_view_assignments
         }
+
+    @staticmethod
+    def read_best_subsets_file(h5_file):
+        with h5py.File(h5_file, 'r') as f:
+            files = f['files'][()]
+            files = [filename.decode('utf-8') for filename in files]
+            subsets = f['subsets'][()]
+            subsets = {
+                file_key: subset
+                for file_key, subset in zip(files, subsets.tolist())
+            }
+
+            assignments = [f['assignment%d'%i][()] for i in range(3)]
+            assignments = {
+                'assignment%d' % i: {
+                    file_key: assign
+                    for file_key, assign in zip(files, assignment.tolist())
+                } for i, assignment in enumerate(assignments)
+            }
+            return {'subsets': subsets, **assignments}
+
+
+    ##
+    #  @return list with points assignments at all point densities
+    @staticmethod
+    def get_points_assignments(input_batch):
+        points_assignments_keys = ['assignment%d' % i for i in range(3)]
+        points_assignments = [
+            input_batch[key] for key in points_assignments_keys
+        ]
+        return points_assignments
+
 
     @staticmethod
     def read_image(img_file):

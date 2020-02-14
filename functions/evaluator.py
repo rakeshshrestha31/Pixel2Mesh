@@ -131,9 +131,11 @@ class Evaluator(CheckpointRunner):
             images = input_batch['images']
             proj_matrices = input_batch["proj_matrices"]
             depth_values = input_batch["depth_values"]
+            points_assignments = self.dataset.get_points_assignments(input_batch)
 
             # predict with model
-            out = self.model(images, proj_matrices, depth_values)
+            out = self.model(images, proj_matrices,
+                             depth_values, points_assignments)
 
             if self.options.model.name == "pixel2mesh":
                 pred_vertices = out["pred_coord"][-1]
@@ -147,8 +149,8 @@ class Evaluator(CheckpointRunner):
                     gt_points, input_batch["labels"]
                 )
                 self.evaluate_depth_loss(
-                    out["depth"], input_batch["depths"][:, 0],
-                    input_batch["masks"][:, 0], input_batch["labels"]
+                    out["depths"], input_batch["depths"],
+                    input_batch["masks"], input_batch["labels"]
                 )
             elif self.options.model.name == "classifier":
                 self.evaluate_accuracy(out, input_batch["labels"])
