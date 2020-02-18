@@ -17,9 +17,10 @@ from datasets.base_dataset import BaseDataset
 import torch
 import torchvision
 
+MIN_BASELINE = 0.2
 base_dataset = BaseDataset()
 
-def check_baselines(file_root):
+def check_baselines(file_root, debug=False):
     # dictionary from scene to best subset
     best_subsets = {}
     best_images = []
@@ -58,20 +59,22 @@ def check_baselines(file_root):
             best_subsets['%s/%s'%(label, label_appendix)] = best_subset
             best_images.extend([imgs[i] for i in best_subset])
 
-            # if len(best_subsets) > 10:
-            #     break
+            if debug and len(best_subsets) > 10:
+                break
 
-    # best_images_tensor = torch.stack(best_images, 0)
-    # grid_images_tensor = torchvision.utils.make_grid(best_images_tensor, nrow=3)
-    # grid_images_np = (grid_images_tensor.permute(1, 2, 0) * 255).numpy() \
-    #                         .astype(np.uint8)
-    # cv2.imwrite('/tmp/best_subsets.png', grid_images_np)
+    if debug:
+        best_images_tensor = torch.stack(best_images, 0)
+        grid_images_tensor = torchvision.utils.make_grid(best_images_tensor, nrow=3)
+        grid_images_np = (grid_images_tensor.permute(1, 2, 0) * 255).numpy() \
+                                .astype(np.uint8)
+        cv2.imwrite('/tmp/best_subsets.png', grid_images_np)
 
     with open('/tmp/best_subsets.json', 'w') as f:
         json.dump(best_subsets, f, indent=4)
 
 
 def find_best_subset(T_world_cams):
+    global MIN_BASELINE
     all_subsets = list(itertools.combinations(
         range(len(T_world_cams)), 3
     ))
@@ -84,6 +87,7 @@ def find_best_subset(T_world_cams):
             pose1 = T_world_cams[subset_pair_indices[1]]
             baseline_vector = pose1[:3, 3] - pose0[:3, 3]
             baseline = np.linalg.norm(baseline_vector)
+            baseline = float('inf') if baseline < MIN_BASELINE else baseline
             total_baseline += baseline
         subset_baselines.append(total_baseline)
 
