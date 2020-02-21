@@ -8,6 +8,7 @@
 import argparse, sys, os
 import subprocess
 import pickle
+import cv2
 import numpy as np
 import open3d as o3d
 import sklearn.preprocessing
@@ -15,19 +16,22 @@ import trimesh
 import multiprocessing as mp
 import time
 import contextlib
+import functools
 
-parser = argparse.ArgumentParser(description='Renders given obj file by rotation a camera around it.')
+def parse_args():
+    parser = argparse.ArgumentParser(description='Renders given obj file by rotation a camera around it.')
 
-parser.add_argument('shapenet_dir', type=str,
-                    help='directory of the original shapenetv1 dataset')
-parser.add_argument('rendering_dir', type=str,
-                    help='Directory of the rendering meta data.')
-parser.add_argument('xms_exec', type=str,
-                    help='xms executable for rendering depth')
-parser.add_argument('--objects-categories-file', type=str, default='',
-                    help='xms executable for rendering depth')
+    parser.add_argument('shapenet_dir', type=str,
+                        help='directory of the original shapenetv1 dataset')
+    parser.add_argument('rendering_dir', type=str,
+                        help='Directory of the rendering meta data.')
+    parser.add_argument('xms_exec', type=str,
+                        help='xms executable for rendering depth')
+    parser.add_argument('--objects-categories-file', type=str, default='',
+                        help='xms executable for rendering depth')
 
-args = parser.parse_args()
+    args = parser.parse_args()
+    return args
 
 P2M_SCALE_FACTOR = 0.57
 P2M_FOCAL_LENGTH = 250
@@ -125,7 +129,7 @@ def remove_mesh_file(mesh_filename):
         os.remove(mesh_filename.replace('.obj', '.mtl'))
         os.remove(mesh_filename.replace('.obj', '.png'))
 
-def render_object(obj_category):
+def render_object(obj_category, args, return_depths):
     obj, category = obj_category
     original_mesh_file = os.path.join(
         args.shapenet_dir, obj, category, 'model.obj'
@@ -148,8 +152,12 @@ def render_object(obj_category):
         os.path.join(depth_dir, '{0:02}.png'.format(i))
         for i in range(len(rendering_metadata))
     ]
+    max_creation_time = 24 * 3600.
     depth_files_available = [
-        os.path.isfile(depth_file) for depth_file in depth_files
+        os.path.isfile(depth_file) \
+                and (time.time() - os.path.getmtime(depth_file)) \
+                    < max_creation_time
+        for depth_file in depth_files
     ]
     if np.all(depth_files_available):
         print('skipping', depth_dir)
@@ -171,11 +179,11 @@ def render_object(obj_category):
 
     if not os.path.isfile(normal_mesh_file):
         print('[Error] Unable to generate mesh with normal', normal_mesh_file)
-
+        return
     try:
         shapenet_model = o3d.io.read_triangle_mesh(normal_mesh_file)
         # scale it to fit P2M
-        shapenet_model.scale(P2M_SCALE_FACTOR)
+        shapenet_model.scale(P2M_SCALE_FACTOR, center=False)
         o3d.io.write_triangle_mesh(scaled_mesh_file, shapenet_model)
 
         # shapenet_model = trimesh.load_mesh(original_mesh_file)
@@ -187,13 +195,18 @@ def render_object(obj_category):
         print('[Error] Unable to load mesh', normal_mesh_file, str(e))
         return
 
+    depths = [] if return_depths else None
     for view_id, extrinsics in enumerate(rendering_metadata):
         depth_file_prefix = os.path.join(
             depth_dir, '{0:02}'.format(view_id)
         )
 
         # avoid doing it again if done already
-        if os.path.isfile(depth_file_prefix + '.png'):
+        depth_file = depth_file_prefix + '.png'
+        depth_file_creation_interval = \
+                time.time() - os.path.getmtime(depth_file) < max_creation_time
+        if os.path.isfile(depth_file) and depth_file_creation_interval == max_creation_time:
+            print('skipping', depth_file)
             continue
 
         R, t = camera_mat(extrinsics)
@@ -216,16 +229,22 @@ def render_object(obj_category):
 
         if os.path.isfile(depth_file_prefix + '.png'):
             print('written', depth_file_prefix)
+            depth = cv2.imread(depth_file_prefix + '.png', cv2.IMREAD_ANYDEPTH)
         else:
             print('[Error] unable to render', depth_file_prefix)
+            depth = None
+        if return_depths:
+            depths.append(depth)
 
     remove_mesh_file(normal_mesh_file)
     remove_mesh_file(scaled_mesh_file)
+    return depths
 
 # multi-processing stuffs
 NCORE = 8
 
 if __name__ == '__main__':
+    args = parse_args()
     if args.objects_categories_file:
         shapenet_objects_categories = np.loadtxt(
             args.objects_categories_file, dtype=str
@@ -247,7 +266,8 @@ if __name__ == '__main__':
         )
 
     with mp.Pool(NCORE) as p:
-        p.map(render_object, shapenet_objects_categories)
+        p.map(functools.partial(render_object, args=args, return_depths=False),
+              shapenet_objects_categories)
 
     # for i in shapenet_objects_categories:
     #     render_object(i)
