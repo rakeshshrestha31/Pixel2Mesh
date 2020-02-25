@@ -1,3 +1,6 @@
 [submodule "external/neural_renderer"]
 	path = external/neural_renderer
 	url = https://github.com/daniilidis-group/neural_renderer
+[submodule "utils/depth_renderer/thirdparty/tinyobjloader"]
+	path = utils/depth_renderer/thirdparty/tinyobjloader
+	url = https://github.com/tinyobjloader/tinyobjloader.git
