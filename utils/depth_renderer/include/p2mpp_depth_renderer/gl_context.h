@@ -19,10 +19,19 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <memory>
 
 namespace p2mpp_depth_renderer
 {
+
+// forward declare
+namespace offscreen_rendering
+{
+    class ProjectionParameters;
+}
+
 using namespace glm;
+using ProjectionParameters = offscreen_rendering::ProjectionParameters;
 
 class GlContext
 {
@@ -31,6 +40,7 @@ public:
     GlContext()
         : request_new_frame(false), run_thread_initialized(false),
           renderer_initialized(false) {}
+    ~GlContext();
 
     // - - - OpenGL configuration and other low-level stuff is all below - - - //
     void openWindow();
@@ -49,18 +59,14 @@ public:
      * @param maxD
      * @return
      */
-    std::vector<float> render(std::vector<Eigen::Vector3f> vertices,
-                              std::vector<Eigen::Matrix<GLushort, -1, 3>> faces,
-                              std::vector<Eigen::Vector3f> cams,
-                              std::array<GLsizei, 2> image_size,
-                              float scale = 1.0, bool inverse = false);
+    std::vector<float> render(const Eigen::Matrix<float, -1, 3> &vertices,
+                              const Eigen::Matrix<GLushort, -1, 3> &faces,
+                              const ProjectionParameters &projection_parameters);
 
     std::vector<float> render_threaded(
-            std::vector<Eigen::Vector3f> vertices,
-            std::vector<Eigen::Matrix<GLushort, -1, 3>> faces,
-            std::vector<Eigen::Vector3f> cams,
-            std::array<GLsizei, 2> image_size,
-            float scale = 1.0, bool inverse = false
+            const Eigen::Matrix<float, -1, 3> &vertices,
+            const Eigen::Matrix<GLushort, -1, 3> &faces,
+            const ProjectionParameters &projection_parameters
     );
     void run();
 
@@ -75,12 +81,9 @@ protected:
     GLuint sceneDepthTexture;
     GLuint sceneDepthBuffer;
 
-    std::vector< Eigen::Vector3f > vertices;
-    std::vector< Eigen::Matrix<GLushort, -1, 3> > faces;
-    std::vector< Eigen::Vector3f > cams;
-    std::array<GLsizei, 2> image_size;
-    float scale;
-    bool inverse;
+    Eigen::Matrix<float, -1, 3> vertices;
+    Eigen::Matrix<GLushort, -1, 3> faces;
+    std::unique_ptr<ProjectionParameters> projection_parameters;
 
     std::vector<float> depth_buffer;
     std::atomic_bool run_thread_initialized;

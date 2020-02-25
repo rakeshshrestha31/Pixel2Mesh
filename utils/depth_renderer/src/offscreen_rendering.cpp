@@ -4,33 +4,17 @@
  */
 #include <p2mpp_depth_renderer/offscreen_rendering.h>
 
-#include <GL/gl.h>
-
 namespace p2mpp_depth_renderer
 {
 
 void offscreen_rendering::mGLRender(
-        std::vector<Eigen::Vector3f> vertices,
-        std::vector< Eigen::Matrix<GLushort,-1,3> > faces,
-        std::vector<Eigen::Vector3f> cams,
-        float scale, bool inverse
+        const Eigen::Matrix<float, -1, 3> &vertices,
+        const Eigen::Matrix<GLushort, -1, 3> &faces,
+        const ProjectionParameters &projection_parameters
 )
 {
     glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    // if (!inverse)
-    //     gluLookAt(cam[0], cam[1], cam[2], 0, 0, 0, 0, 1e-10, -1);
-    // else
-    //     gluLookAt(cam[0], cam[1], cam[2], 0, 0, 0, 0, -1, 0);
-
-    // glTranslatef(0, 0, -2.2);
-    // glRotatef(90, cam[0], cam[1], cam[2]);
-
-
-    for (auto cam: cams)
-    {
-        glRotatef(90, cam[0], cam[1], cam[2]);
-    }
+    glLoadMatrixf(projection_parameters.T_cam_world.data());
 
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -38,22 +22,16 @@ void offscreen_rendering::mGLRender(
     glDepthFunc(GL_LEQUAL);
     glBegin(GL_TRIANGLES);
 
-    int num = vertices.size();
-    for (int i = 0; i < num; i++)
+    Eigen::Matrix<float, -1, 3> scale_vertices = vertices;
+    scale_vertices *= projection_parameters.scale;
+    int num_faces = faces.rows();
+    for (int f_idx = 0; f_idx < num_faces; f_idx++)
     {
-        for (int j = 0; j < faces[i].rows(); j++)
+        for (int fv_idx = 0; fv_idx < 3; fv_idx++)
         {
-            auto p0 = vertices[i].row(faces[i](j, 0));
-            auto p1 = vertices[i].row(faces[i](j, 1));
-            auto p2 = vertices[i].row(faces[i](j, 2));
-
-            p0 *= scale;
-            p1 *= scale;
-            p2 *= scale;
-
-            glVertex3fv(p0.data());
-            glVertex3fv(p1.data());
-            glVertex3fv(p2.data());
+            const auto v_idx = faces(f_idx, fv_idx);
+            const auto p = vertices.row(v_idx);
+            glVertex3fv(p.data());
         }
     }
     glEnd();
@@ -69,31 +47,41 @@ void offscreen_rendering::mGLRender(
  * @return
  */
 std::vector<float> offscreen_rendering::render(
-        std::vector<Eigen::Vector3f> vertices,
-        std::vector<Eigen::Matrix<GLushort, -1, 3>> faces,
-        std::vector<Eigen::Vector3f> cams,
-        std::array<GLsizei, 2> image_size,
-        float scale, bool inverse
+        const Eigen::Matrix<float, -1, 3> &vertices,
+        const Eigen::Matrix<GLushort, -1, 3> &faces,
+        const ProjectionParameters &projection_parameters
 )
 {
     glPushAttrib(GL_ALL_ATTRIB_BITS);
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(-1.0, 1.0, -1.0, 1.0, 0.0, 3);
-    glViewport(0, 0, image_size[0], image_size[1]);
+    gluPerspective(
+        projection_parameters.fovy,
+        projection_parameters.image_size[0]
+            / projection_parameters.image_size[1],
+        projection_parameters.z_near, projection_parameters.z_far
+    );
+    glViewport(
+        0, 0, projection_parameters.image_size[0],
+        projection_parameters.image_size[1])
+    ;
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     // gluLookAt(1, 0, 0, 0, 0, 0, 0, 1, 0);
-    mGLRender(vertices, faces, cams, scale, inverse);
+    mGLRender(vertices, faces, projection_parameters);
 
-    std::vector<float> depth_z(image_size[0] * image_size[1]);
+    std::vector<float> depth_z(
+        projection_parameters.image_size[0] \
+            * projection_parameters.image_size[1]
+    );
 
     glReadBuffer(GL_BACK);
     glReadPixels(
-        0, 0, image_size[0], image_size[1], GL_DEPTH_COMPONENT, GL_FLOAT,
-        (GLvoid*)depth_z.data()
+        0, 0, projection_parameters.image_size[0],
+        projection_parameters.image_size[1],
+        GL_DEPTH_COMPONENT, GL_FLOAT, (GLvoid*)depth_z.data()
     );
     glPopAttrib();
 

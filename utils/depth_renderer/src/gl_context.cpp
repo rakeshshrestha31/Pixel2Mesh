@@ -3,12 +3,14 @@
  * @author Rakesh Shrestha, rakeshs@sfu.ca
  */
 
-#include <p2mpp_depth_renderer/gl_context.h>
 #include <p2mpp_depth_renderer/offscreen_rendering.h>
+#include <p2mpp_depth_renderer/gl_context.h>
 
 #include <iostream>
 using namespace std;
 using namespace p2mpp_depth_renderer;
+
+GlContext::~GlContext() = default;
 
 void GlContext::openWindow()
 {
@@ -154,11 +156,9 @@ void GlContext::initialize()
 }
 
 std::vector<float> GlContext::render(
-        std::vector<Eigen::Vector3f> vertices,
-        std::vector<Eigen::Matrix<GLushort, -1, 3>> faces,
-        std::vector<Eigen::Vector3f> cams,
-        std::array<GLsizei, 2> image_size,
-        float scale, bool inverse
+        const Eigen::Matrix<float, -1, 3> &vertices,
+        const Eigen::Matrix<GLushort, -1, 3> &faces,
+        const ProjectionParameters &projection_parameters
 )
 {
     if (!renderer_initialized)
@@ -166,17 +166,15 @@ std::vector<float> GlContext::render(
         initialize();
     }
     return offscreen_rendering::render(
-        vertices, faces, cams, image_size, scale, inverse
+        vertices, faces, projection_parameters
     );
 
 }
 
 std::vector<float> GlContext::render_threaded(
-        std::vector<Eigen::Vector3f> vertices,
-        std::vector<Eigen::Matrix<GLushort, -1, 3>> faces,
-        std::vector<Eigen::Vector3f> cams,
-        std::array<GLsizei, 2> image_size,
-        float scale, bool inverse
+        const Eigen::Matrix<float, -1, 3> &vertices,
+        const Eigen::Matrix<GLushort, -1, 3> &faces,
+        const ProjectionParameters &projection_parameters
 )
 {
     if (!run_thread_initialized)
@@ -189,11 +187,8 @@ std::vector<float> GlContext::render_threaded(
     while (!request_new_frame);
     this->vertices = vertices;
     this->faces = faces;
-    this->cams = cams;
-    this->image_size = image_size;
-    this->scale = scale;
-    this->inverse = inverse;
-
+    this->projection_parameters =
+        std::make_unique<ProjectionParameters>(projection_parameters);
     request_new_frame = true;
 
     while (request_new_frame);
@@ -209,10 +204,10 @@ void GlContext::run()
         if (request_new_frame)
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            if (vertices.size() && faces.size())
+            if (vertices.rows() && faces.rows() && projection_parameters)
             {
                 depth_buffer = offscreen_rendering::render(
-                    vertices, faces, cams, image_size
+                    vertices, faces, *projection_parameters
                 );
             }
             request_new_frame = false;

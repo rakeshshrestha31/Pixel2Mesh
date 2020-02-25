@@ -1,10 +1,19 @@
 #define TINYOBJLOADER_IMPLEMENTATION // define this in only *one* .cc
 
-#include "tiny_obj_loader.h"
+#include <p2mpp_depth_renderer/offscreen_rendering.h>
+#include <p2mpp_depth_renderer/gl_context.h>
+#include <p2mpp_depth_renderer/mesh.h>
+
 #include <iostream>
+#include <Eigen/Core>
+#include <opencv2/opencv.hpp>
+#include <opencv/highgui.h>
+
+
+constexpr float MESH_SCALE_FACTOR = 0.57;
 
 struct ProgramOptions;
-struct Mesh;
+
 void get_options(const int argc, char* const* argv, ProgramOptions &options);
 void print_options(const ProgramOptions &options);
 
@@ -13,42 +22,43 @@ struct ProgramOptions
     std::string obj_file;
     std::string mtl_basedir;
     std::array<int, 2> image_size;
-    std::array<float, 2> focal_length;
+    float focal_length;
+    float z_near;
+    float z_far;
     std::array<float, 2> principal_point;
-    std::array<float, 12> projection_matrix;
+    Eigen::Matrix<float, 4, 4, Eigen::ColMajor> extrinsics;
 }; //endstruct
-
-struct Mesh
-{
-    std::string obj_file;
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-}; // nedstruct Mesh
 
 void get_options(const int argc, char* const* argv, ProgramOptions &options)
 {
-    if (argc < 20)
+    if (argc < 21)
     {
         std::cerr << "Usage: "
                   << argv[0]
                   << " <obj_file> <mtl_basedir> <image_size (w, h)>"
-                     " <focal_length (fx, fy)> <principal_point (cx, cy)>"
+                     " <focal_length fy> <z_near> <z_far> <principal_point (cx, cy)>"
                      " <projection_matrix (3x4)>"
                   << std::endl;
         exit(1);
     }
-    options.obj_file = argv[1];
-    options.mtl_basedir = argv[2];
-    options.image_size[0] = std::atoi(argv[3]);
-    options.image_size[1] = std::atoi(argv[4]);
-    options.focal_length[0] = std::atof(argv[5]);
-    options.focal_length[1] = std::atof(argv[6]);
-    options.principal_point[0] = std::atof(argv[7]);
-    options.principal_point[1] = std::atof(argv[8]);
-    for (size_t i = 0; i < 12; i++)
+    int i = 1;
+    options.obj_file = argv[i++];
+    options.mtl_basedir = argv[i++];
+    options.image_size[0] = std::atoi(argv[i++]);
+    options.image_size[1] = std::atoi(argv[i++]);
+    options.focal_length = std::atof(argv[i++]);
+    options.z_near = std::atof(argv[i++]);
+    options.z_far = std::atof(argv[i++]);
+    options.principal_point[0] = std::atof(argv[i++]);
+    options.principal_point[1] = std::atof(argv[i++]);
+
+    options.extrinsics = Eigen::Matrix4f::Identity();
+    for (size_t row = 0; row < 3; row++)
     {
-        options.projection_matrix[i] = std::atof(argv[9 + i]);
+        for (size_t col =0; col < 4; col++)
+        {
+            options.extrinsics(row, col) = std::atof(argv[i++]);
+        }
     }
 }
 
@@ -59,83 +69,95 @@ void print_options(const ProgramOptions &options)
     std::cout << "image size: "
               << options.image_size[0] << ", " << options.image_size[1]
               << std::endl;
-    std::cout << "focal length: "
-              << options.focal_length[0] << ", " << options.focal_length[1]
-              << std::endl;
+    std::cout << "focal length: " << options.focal_length << std::endl;
+    std::cout << "z_near: " << options.z_near << std::endl;
+    std::cout << "z_far: " << options.z_far << std::endl;
     std::cout << "principal point: "
               << options.principal_point[0] << ", "
               << options.principal_point[1]
               << std::endl;
     std::cout << "projection matrix: " << std::endl;
-    for (size_t i = 0; i < 3; i++)
+    std::cout << "extrinsics: " << std::endl
+              << options.extrinsics << std::endl;
+}
+
+void initializeOpenGL(int argc, char **argv)
+{
+    /****************************************/
+    /*   Initialize GLUT and create window  */
+    /****************************************/
+
+    glutInit(&argc, argv);
+    glutInitDisplayMode( GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH );
+    glutInitWindowPosition( 50, 50 );
+    glutInitWindowSize( 800, 600 );
+    auto main_window = glutCreateWindow( "Ignore me" );
+    // glutDisplayFunc( myGlutDisplay );
+
+
+
+	/****************************************/
+    /*          Enable z-buferring          */
+    /****************************************/
+
+    glEnable(GL_DEPTH_TEST);
+}
+
+void saveDepthBuffer(const std::vector<float> depth_buffer,
+                       int width, int height,
+                       const std::string filename)
+{
+    assert(width * height == depth_buffer.size());
+    std::vector<unsigned char> char_buffer(depth_buffer.size());
+    bool valid = false;
+    for (size_t i = 0; i < depth_buffer.size(); i++)
     {
-        const size_t row_offset = i * 3;
-        for (size_t j = 0; j < 4; j++)
+        if (depth_buffer[i])
         {
-            std::cout << options.projection_matrix[row_offset + j] << ", ";
+            valid = true;
         }
-        std::cout << std::endl;
+        char_buffer[i] = depth_buffer[i] * 255;
     }
-}
-
-bool loadObj(const std::string &obj_file, const std::string &mtl_basedir, Mesh &mesh)
-{
-    std::string warn;
-    std::string err;
-
-    mesh.obj_file = obj_file;
-    bool ret = tinyobj::LoadObj(
-        &mesh.attrib, &mesh.shapes, &mesh.materials,
-        &warn, &err, obj_file.c_str(), mtl_basedir.c_str()
-    );
-
-    if (!warn.empty())
-    {
-      std::cout << warn << std::endl;
-    }
-
-    if (!err.empty())
-    {
-      std::cerr << err << std::endl;
-      return false;
-    }
-
-    if (!ret)
-    {
-        return false;
-    }
-    else
-    {
-        return true;
-    }
-}
-
-void print_mesh_stats(const Mesh &mesh)
-{
-    std::cout << "obj file: " << mesh.obj_file << std::endl;
-    std::cout << "vertices: " << mesh.attrib.vertices.size() << std::endl;
-    std::cout << "shapes: " << mesh.shapes.size() << std::endl;
-    for (const auto &shape: mesh.shapes)
-    {
-        std::cout << "faces: " << shape.mesh.num_face_vertices.size()
-                  << std::endl;
-    }
+    std::cout << "depth valid: " << valid << std::endl;
+    cv::Mat mat(cv::Size(width, height), CV_8UC1, char_buffer.data());
+    // OpenGL is column major, OpenCV is row major
+    cv::flip(mat, mat, 0);
+    cv::imwrite(filename, mat);
 }
 
 int main(int argc, char **argv)
 {
+    using namespace p2mpp_depth_renderer;
+    using ProjectionParameters =
+        p2mpp_depth_renderer::offscreen_rendering::ProjectionParameters;
     ProgramOptions options;
     get_options(argc, argv, options);
     print_options(options);
+    ProjectionParameters projection_parameters(
+        options.extrinsics, options.focal_length, options.image_size,
+        options.z_near, options.z_far, MESH_SCALE_FACTOR
+    );
 
     Mesh mesh;
-    auto mesh_status = loadObj(options.obj_file, options.mtl_basedir, mesh);
+    auto mesh_status = mesh.loadObj(options.obj_file, options.mtl_basedir);
     if (!mesh_status)
     {
         std::cerr << "Could not read mesh" << std::endl;
         exit(1);
     }
-    print_mesh_stats(mesh);
+    mesh.printMeshStats();
 
+	initializeOpenGL(argc, argv);
+    std::cout << "OpenGL successfully initialize" << std::endl;
+    GlContext gl_context;
+    gl_context.initialize();
+    const auto float_depth_buffer = gl_context.render(
+        mesh.getVertices(), mesh.getFaces(), projection_parameters
+    );
+    saveDepthBuffer(
+        float_depth_buffer, options.image_size[0], options.image_size[1],
+        "/tmp/depth_buffer.png"
+    );
 
+    return 0;
 }

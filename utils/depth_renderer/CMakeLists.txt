@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(p2mpp_depth_renderer)
 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
-add_compile_options(-std=c++11)
+add_compile_options(-std=c++14)
 
 # opengl stuffs for multi-context
 find_package(GLEW REQUIRED)
@@ -40,16 +40,19 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tinyobjloader)
 find_package(GLUT REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(OpenCV REQUIRED)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${EIGEN3_INCLUDE_DIR}
+    ${OpenCV_INCLUDE_DIRS}
 )
 
 add_library(
     ${PROJECT_NAME} SHARED
     src/gl_context.cpp
     src/offscreen_rendering.cpp
+    src/mesh.cpp
 )
 
 target_link_libraries(
@@ -60,6 +63,7 @@ target_link_libraries(
     ${GLFW_LIBRARIES}
     ${GLM_LIBRARIES}
     ${EIGEN3_LIBS}
+    tinyobjloader
 )
 
 add_executable(
@@ -68,5 +72,5 @@ add_executable(
 target_link_libraries(
     render_depth
     ${PROJECT_NAME}
-    tinyobjloader
+    ${OpenCV_LIBS}
 )
