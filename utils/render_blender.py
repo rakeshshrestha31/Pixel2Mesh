@@ -37,8 +37,8 @@ P2M_SCALE_FACTOR = 0.57
 P2M_FOCAL_LENGTH = 250
 P2M_IMG_SIZE = (224, 224)
 P2M_PRINCIPAL_POINT = (112, 112)
-P2M_MIN_POINT_DEPTH = 0.3
-P2M_MAX_POINT_DEPTH = 1.0
+P2M_MIN_POINT_DEPTH = 0.1
+P2M_MAX_POINT_DEPTH = 1.3
 
 def normal(v):
     norm = np.linalg.norm(v)
@@ -180,10 +180,15 @@ def render_object(obj_category, args, return_depths):
     if not os.path.isfile(normal_mesh_file):
         print('[Error] Unable to generate mesh with normal', normal_mesh_file)
         return
+
     try:
         shapenet_model = o3d.io.read_triangle_mesh(normal_mesh_file)
         # scale it to fit P2M
         shapenet_model.scale(P2M_SCALE_FACTOR, center=False)
+        # find mesh with normal (meshlab server may not always succeed)
+        # but we need meshlab server nonetheless
+        # some meshes are not readable otherwise
+        shapenet_model.compute_vertex_normals()
         o3d.io.write_triangle_mesh(scaled_mesh_file, shapenet_model)
 
         # shapenet_model = trimesh.load_mesh(original_mesh_file)
@@ -270,4 +275,5 @@ if __name__ == '__main__':
               shapenet_objects_categories)
 
     # for i in shapenet_objects_categories:
-    #     render_object(i)
+    #     render_object(i, args=args, return_depths=False)
+
