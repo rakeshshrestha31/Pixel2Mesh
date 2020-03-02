@@ -102,15 +102,9 @@ class Trainer(CheckpointRunner):
     def train_step(self, input_batch):
         self.model.train()
         input_batch = tocuda(input_batch)
-        # Grab data from the batch
-        images = input_batch["images"]
-        proj_matrices = input_batch["proj_matrices"]
-        depth_values = input_batch["depth_values"]
-        points_assignments = self.dataset.get_points_assignments(input_batch)
 
         # predict with model
-        out = self.model(images, proj_matrices,
-                         depth_values, points_assignments)
+        out = self.model(input_batch)
 
         # compute loss
         loss, loss_summary = self.criterion(out, input_batch)
@@ -143,8 +137,6 @@ class Trainer(CheckpointRunner):
 
             # self.test()
             # Run validation every test_epochs
-            if self.epoch_count % self.options.train.test_epochs == 0:
-                self.test()
 
             # Iterate over all batches in an epoch
             for step, batch in enumerate(train_data_loader):
@@ -184,7 +176,8 @@ class Trainer(CheckpointRunner):
             # lr scheduler step
             self.lr_scheduler.step()
 
-        self.test()
+            if self.epoch_count % self.options.train.test_epochs == 0:
+                self.test()
 
     def train_summaries(self, input_batch, out_summary, loss_summary):
         if self.renderer is not None:

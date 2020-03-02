@@ -166,8 +166,6 @@ class P2MLoss(nn.Module):
             move_loss += lap_const[i] * move
 
         depth_loss += self.depth_loss(gt_depths, pred_depths, masks)
-        # normalize to make the unit consistent with since scale one
-        depth_loss /= len(gt_depths)
 
         #
         if self.options.only_depth_training:

@@ -2,12 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.backbones import get_backbone
+from models.backbones.costvolume import MVSNet
+from models.backbones.vgg16 import VGG16P2M
 from models.layers.gbottleneck import GBottleneck
 from models.layers.gconv import GConv
 from models.layers.gpooling import GUnpooling
 from models.layers.gprojection import GProjection
 from models.layers.gprojection_xyz import GProjection as GProjectionXYZ
+
+import config
 
 class P2MModel(nn.Module):
 
@@ -21,8 +24,11 @@ class P2MModel(nn.Module):
         self.gconv_activation = options.gconv_activation
         self.gconv_skip_connection = options.gconv_skip_connection.lower()
 
-        self.nn_encoder, self.nn_decoder = get_backbone(options, self.freeze_cv)
-        self.features_dim = self.nn_encoder.features_dim + self.coord_dim
+        self.mvsnet = MVSNet(freeze_cv=self.freeze_cv)
+        self.vgg = VGG16P2M(n_classes_input=1, pretrained=False)
+        # x3 for three views
+        self.features_dim = (self.vgg.features_dim + self.coord_dim) * 3
+        print("===> number of P2MModel features:", self.features_dim)
 
         self.gcns = nn.ModuleList([
             GBottleneck(6, self.features_dim, self.hidden_dim, self.coord_dim,
@@ -42,8 +48,10 @@ class P2MModel(nn.Module):
         #     self.projection = GProjection
         # else:
         #     self.projection = GProjection
-        self.projection = GProjectionXYZ(mesh_pos, camera_f, camera_c, bound=options.z_threshold,
-                                      tensorflow_compatible=options.align_with_tensorflow)
+        self.projection = GProjection(
+            mesh_pos, camera_f, camera_c, bound=options.z_threshold,
+            tensorflow_compatible=options.align_with_tensorflow
+        )
 
         self.gconv = GConv(in_features=self.last_hidden_dim, out_features=self.coord_dim,
                            adj_mat=ellipsoid.adj_mat[2])
@@ -53,108 +61,87 @@ class P2MModel(nn.Module):
             self.gconv2 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[1])
             self.gconv3 = GConv(in_features=6, out_features=3, adj_mat=ellipsoid.adj_mat[2])
 
-    def src2ref(self, pts, ref_proj, src_proj):
-        with torch.no_grad():
-            z_axis = torch.ones([pts.shape[0], pts.shape[1], 1], device=pts.device)
-            pts = torch.cat([pts, z_axis], -1)
-            src2ref_proj = torch.matmul(ref_proj[:, 0, :, :], torch.inverse(src_proj[:, 0, :, :]))
-            pts_ref = torch.matmul(src2ref_proj, pts.permute(0,2,1)).permute(0,2,1)
-            pts = pts_ref[:, :, :3] / pts_ref[:, :, 3:4]
-
-        return  pts
-
 
     @staticmethod
     def get_tensor_device(tensor):
         return tensor.get_device() if tensor.is_cuda else torch.device('cpu')
 
+    @staticmethod
+    def flatten_batch_view(tensor):
+        return tensor.view(-1, *(tensor.size()[2:]))
 
-    ## projects points' assigned features
-    def assigned_projection(self, points, features, points_assignments,
-                            img_shape, depth_values):
-        num_views = len(features)
-        batch_size, num_points, num_coords = points.size()
-        proj_features = torch.zeros(
-            (batch_size, num_points, self.features_dim),
-            dtype=points.dtype, device = self.get_tensor_device(points)
+    @staticmethod
+    def unflatten_batch_view(tensor, batch_size):
+        return tensor.view(batch_size, -1, *(tensor.size()[1:]))
+
+    @staticmethod
+    def transform_points(pts, T):
+        return P2MModel.make_points_unhomogeneous(torch.bmm(
+            P2MModel.make_points_homogeneous(pts), T.transpose(-1, -2)
+        ))
+
+    @staticmethod
+    def make_points_homogeneous(pts):
+        return torch.cat(
+            (
+                pts,
+                torch.ones( *(pts.size()[:-1]), 1,
+                            dtype=pts.dtype, device=pts.device )
+            ), dim=-1
         )
 
-        ## Note: Since the number of selected points from each batch
-        ## can be different, we have to do this flattening stuff
-        # batch and num_points combined to one dim
-        flattened_points = points.contiguous().view(-1, num_coords)
-
-        for view_idx in range(num_views):
-            selected_indices = (points_assignments == view_idx)
-            # check how many points of each batch selected
-
-            selected_points = flattened_points[selected_indices.view(-1)]
-            # batch and channels combined to make batch size look like 1
-            flattened_features = [i.view(-1, *(i.shape[2:])).unsqueeze(0)
-                                  for i in features[view_idx][0]]
-            selected_proj = self.projection(
-                img_shape, flattened_features,
-                selected_points.unsqueeze(0), depth_values
-            )
-            proj_features += self.unflatten_features(
-                selected_proj, selected_indices, num_points, batch_size
-            )
-
-        return proj_features
+    @staticmethod
+    def make_points_unhomogeneous(pts):
+        return pts[:, :, :3]
 
     ##
-    #  @param featues tensor of size
-    #       1 x (batch1_indices + batch2_indices ...) x
-    #       (num_features*batch_size + 3)
-    #       Note: all features aren't necessary, only corresponding features
-    #       from selected_indices
-    #  @return tensor fo size batch_size x num_points x (features + 3)
-    def unflatten_features(self, features, selected_indices,
-                           num_points, batch_size):
-        unflattened_features = torch.zeros(
-            (batch_size, num_points, self.features_dim),
-            dtype=features.dtype, device = self.get_tensor_device(features)
-        )
-        batch_selected_count = selected_indices.sum(dim=1)
-        batch_selected_cumsum = torch.cumsum(batch_selected_count, 0)
-        batch_selected_cumsum = [0] + batch_selected_cumsum.tolist()
+    #  @param img_feats list with elements batch x view x channel x height x width
+    #  @param pts batch x num_points x 3
+    #  @return view pooled tensor of size batch x total_channels x height x width
+    def cross_view_feature_pooling(self, img_shape, img_feats, pts, proj_mat):
+        T_ref_world = proj_mat[:, 0, 0]
+        T_world_ref = torch.inverse(T_ref_world)
+        num_views = img_feats[0].size(1)
+        transformed_features = []
 
-        for batch in range(batch_size):
-            batch_start, batch_end = batch_selected_cumsum[batch:batch+2]
-            feature_start, feature_end = [i * self.nn_encoder.features_dim
-                                          for i in [batch, batch+1] ]
-            batch_proj = torch.cat([
-                # feature from cost volume
-                features[:, batch_start:batch_end, feature_start:feature_end],
-                # 3D coordinates
-                features[:, batch_start:batch_end, -self.coord_dim:]
-            ], dim=-1)
-            unflattened_features[batch, selected_indices[batch]] += \
-                    batch_proj.squeeze(0)
-        return unflattened_features
+        for view_idx in range(num_views):
+            T_view_world = proj_mat[:, view_idx, 0]
+            T_view_ref = torch.bmm(T_view_world, T_world_ref)
+            pts_view = self.transform_points(pts, T_view_ref)
+            view_features = [ i[:, view_idx].contiguous() for i in img_feats ]
+            x = self.projection(img_shape, view_features, pts_view)
+            transformed_features.append(x)
+        return torch.cat(transformed_features, dim=-1)
 
 
-    def forward(self, img, proj, depth_values, points_assignments):
+    def forward(self, input_batch):
+        img = input_batch["images"]
+        proj_mat = input_batch["proj_matrices"]
+        depth_values = input_batch["depth_values"]
+        masks = input_batch["masks"]
         batch_size = img.size(0)
 
-        #Multi-view start
-        img_list = torch.unbind(img, 1)
-        proj_list = torch.unbind(proj, 1)
-        num_views = len(img_list)
-        out_encoder = self.nn_encoder(img, proj_list, depth_values)
-        feature_list = out_encoder["features"][0] #[self.nn_encoder(i) for i in img_list]
-        ref_feature, src_feature_list = feature_list[0], feature_list[1:]
-        ref_proj, src_proj_list       = proj_list[0], proj_list[1:]
+        out_mvsnet = self.mvsnet(input_batch)
+        # unsqeeze 1 to simulate channels (single channel)
+        vgg_input = self.flatten_batch_view(
+            out_mvsnet["depths"] * masks
+        ).unsqueeze(1)
+        vgg_input = F.interpolate(
+            vgg_input, size=[config.IMG_SIZE, config.IMG_SIZE], mode='nearest'
+        )
+        vgg_feats = self.vgg(vgg_input)
+        img_feats = [
+            self.unflatten_batch_view(i, batch_size) for i in vgg_feats
+        ]
 
         img_shape = self.projection.image_feature_shape(img[0])
         init_pts = self.init_pts.data.unsqueeze(0).expand(batch_size, -1, -1)
 
-        x = self.assigned_projection(
-            init_pts, out_encoder["features"], points_assignments[0],
-            img_shape, depth_values
-        )
-
+        # GCN Block 1
         # x1 shape is torch.Size([16, 156, 3]), x_h
+        x = self.cross_view_feature_pooling(
+            img_shape, img_feats, init_pts, proj_mat
+        )
         x1, x_hidden = self.gcns[0](x)
 
         if self.gconv_skip_connection == 'concat':
@@ -166,11 +153,7 @@ class P2MModel(nn.Module):
         x1_up = self.unpooling[0](x1)
 
         # GCN Block 2
-        x = self.assigned_projection(
-            x1, out_encoder["features"], points_assignments[0],
-            img_shape, depth_values
-        )
-
+        x = self.cross_view_feature_pooling(img_shape, img_feats, x1, proj_mat)
         x = self.unpooling[0](torch.cat([x, x_hidden], 2))
 
         # after deformation 2
@@ -185,11 +168,7 @@ class P2MModel(nn.Module):
 
         # GCN Block 3
         # x2 shape is torch.Size([16, 618, 3])
-        x = self.assigned_projection(
-            x2, out_encoder["features"], points_assignments[1],
-            img_shape, depth_values
-        )
-
+        x = self.cross_view_feature_pooling(img_shape, img_feats, x2, proj_mat)
         x = self.unpooling[1](torch.cat([x, x_hidden], 2))
 
         x3, _ = self.gcns[2](x)
@@ -204,15 +183,9 @@ class P2MModel(nn.Module):
         elif self.gconv_skip_connection == 'add':
             x3 = x3 + x2_up
 
-        if self.nn_decoder is not None:
-            reconst = self.nn_decoder(ref_feature)
-        else:
-            reconst = None
-        # multi-view end
-
         return {
             "pred_coord": [x1, x2, x3],
             "pred_coord_before_deform": [init_pts, x1_up, x2_up],
-            "reconst": reconst,
-            "depths": out_encoder["depths"],
+            "reconst": None,
+            "depths": out_mvsnet["depths"],
         }

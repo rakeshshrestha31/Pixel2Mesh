@@ -216,8 +216,10 @@ class MVSNet(nn.Module):
         return features
 
 
-    def forward(self, imgs, proj_matrices, depth_values=None):
-
+    def forward(self, input_batch):
+        imgs = input_batch["images"]
+        proj_matrices = input_batch["proj_matrices"]
+        depth_values = input_batch["depth_values"]
         # imgs = torch.unbind(imgs, 1)
         # proj_matrices = torch.unbind(proj_matrices, 1)
         # assert len(imgs) == len(proj_matrices), "Different number of images and projection matrices"
@@ -233,7 +235,7 @@ class MVSNet(nn.Module):
 
         for view_list in view_lists:
             reordered_features = [features[i] for i in view_list]
-            reordered_proj_matrices = [proj_matrices[i] for i in view_list]
+            reordered_proj_matrices = [proj_matrices[:, i] for i in view_list]
             costvolume_output = self.compute_costvolume_depth(
                 reordered_features, reordered_proj_matrices, depth_values
             )
@@ -384,7 +386,8 @@ class ConvBnReLU3D(nn.Module):
 class CostRegNet(nn.Module):
     def __init__(self):
         super(CostRegNet, self).__init__()
-        self.features_list = [32, 64, 128, 256]
+        # self.features_list = [32, 64, 128, 256]
+        self.features_list = [100, 200, 400, 800]
         self.conv0 = ConvBnReLU3D(64, self.features_list[0])
 
         self.conv1 = ConvBnReLU3D(self.features_list[0], self.features_list[1], stride=2)

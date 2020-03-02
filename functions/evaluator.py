@@ -78,9 +78,13 @@ class Evaluator(CheckpointRunner):
 
     def evaluate_depth_loss(self, pred_depth, gt_depth, mask, labels):
         batch_size = pred_depth.size(0)
+        num_views = pred_depth.size(1)
         for i in range(batch_size):
             label = labels[i].cpu().item()
-            self.depth_loss[label].update(P2MLoss.depth_loss(gt_depth, pred_depth, mask))
+            depth_loss = P2MLoss.depth_loss(
+                gt_depth[i], pred_depth[i], mask[i]
+            )
+            self.depth_loss[label].update(depth_loss)
 
     def evaluate_chamfer_and_f1(self, pred_vertices, pred_faces,
                                 gt_points, labels):
@@ -128,14 +132,9 @@ class Evaluator(CheckpointRunner):
         # Run inference
         with torch.no_grad():
             # Get ground truth
-            images = input_batch['images']
-            proj_matrices = input_batch["proj_matrices"]
-            depth_values = input_batch["depth_values"]
-            points_assignments = self.dataset.get_points_assignments(input_batch)
 
             # predict with model
-            out = self.model(images, proj_matrices,
-                             depth_values, points_assignments)
+            out = self.model(input_batch)
 
             if self.options.model.name == "pixel2mesh":
                 pred_vertices = out["pred_coord"][-1]
