@@ -43,6 +43,7 @@ options.dataset.proj_matrix = None
 options.dataset.shapenet = edict()
 options.dataset.shapenet.num_points = 3000
 options.dataset.shapenet.resize_with_constant_border = False
+options.dataset.shapenet.augment_ref_views = True
 
 options.dataset.predict = edict()
 options.dataset.predict.folder = "./tmp"
@@ -208,6 +209,9 @@ def reset_options(options, args, phase='train'):
         # options.dataset.test_list = "./datasets/data/shapenet/meta/test_dtu_scan4.txt"
         options.dataset.train_list = "./datasets/data/shapenet/meta/train_list_p2mpp.txt"
         options.dataset.test_list = "./datasets/data/shapenet/meta/test_list_p2mpp.txt"
+    if hasattr(args, "augment_ref_views") and \
+            (args.augment_ref_views is not None):
+        options.dataset.shapenet.augment_ref_views = args.augment_ref_views
 
     options.name = args.name
 

@@ -227,6 +227,12 @@ class MVSNet(nn.Module):
         imgs = input_batch["images"]
         proj_matrices = input_batch["proj_matrices"]
         depth_values = input_batch["depth_values"]
+        if ("view_lists" not in input_batch) or not input_batch["view_lists"]:
+            # all the views should be treated as ref_features iteratively
+            view_lists = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
+        else:
+            view_lists = input_batch["view_lists"]
+
         # imgs = torch.unbind(imgs, 1)
         # proj_matrices = torch.unbind(proj_matrices, 1)
         # assert len(imgs) == len(proj_matrices), "Different number of images and projection matrices"
@@ -236,8 +242,6 @@ class MVSNet(nn.Module):
         # in: images; out: 32-channel feature maps
         features = self.get_features_batched(imgs)
 
-        # all the views should be treated as ref_features iteratively
-        view_lists = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
         costvolume_outputs = {'features': [], 'depths': []}
 
         for view_list in view_lists:
@@ -394,7 +398,8 @@ class CostRegNet(nn.Module):
     def __init__(self):
         super(CostRegNet, self).__init__()
         # self.features_list = [32, 64, 128, 256]
-        self.features_list = [100, 200, 400, 800]
+        self.features_list = [64, 128, 256, 512]
+        # self.features_list = [100, 200, 400, 800]
         self.conv0 = ConvBnReLU3D(64, self.features_list[0])
 
         self.conv1 = ConvBnReLU3D(self.features_list[0], self.features_list[1], stride=2)

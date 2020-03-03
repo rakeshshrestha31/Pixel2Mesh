@@ -32,6 +32,9 @@ def parse_args():
     parser.add_argument('--lr', help='initial learning rate', type=float)
     parser.add_argument('--lr-factor', help='learning rate factor', type=float)
     parser.add_argument('--lr-step', nargs='+', type=int)
+    parser.add_argument('--augment-ref-views', dest='augment_ref_views', action='store_true')
+    parser.add_argument('--no-augment-ref-views', dest='augment_ref_views', action='store_false')
+    parser.set_defaults(augment_ref_views=False)
 
     args = parser.parse_args()
 

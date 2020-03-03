@@ -80,12 +80,21 @@ class DepthEvaluator(CheckpointRunner):
                 key: input_batch[key]
                 for key in ['images', 'proj_matrices', 'depth_values']
             }
+            if self.dataset.augment_ref_views:
+                # only use the view 0 as reference
+                model_input['view_lists'] = [(0, 1, 2)]
+                input_depth_key = 'depth'
+                input_mask_key = 'mask'
+            else:
+                input_depth_key = 'depths'
+                input_mask_key = 'masks'
+
             # predict with model
             out = self.model(model_input)
 
             self.evaluate_depth_loss(
-                out["depths"], input_batch["depths"],
-                input_batch["masks"], input_batch["labels"]
+                out["depths"], input_batch[input_depth_key],
+                input_batch[input_mask_key], input_batch["labels"]
             )
 
         return out
