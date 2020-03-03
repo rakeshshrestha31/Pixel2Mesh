@@ -151,7 +151,7 @@ class FeatureNet(nn.Module):
         return x
 
 class MVSNet(nn.Module):
-    def __init__(self, freeze_cv):
+    def __init__(self, freeze_cv, checkpoint=''):
         super(MVSNet, self).__init__()
 
         self.freeze_cv = freeze_cv
@@ -163,6 +163,13 @@ class MVSNet(nn.Module):
         # self.features_dim = 384
         # self.features_dim = 960 # 120
         self.features_dim = np.sum(self.cost_regularization.features_list)
+
+        if checkpoint:
+            print("==> Loading MVSNet checkpoint:", checkpoint)
+            state_dict = torch.load(checkpoint)
+            if "model" in state_dict:
+                state_dict = state_dict["model"]
+            self.load_state_dict(state_dict)
 
         for param in self.parameters():
             param.requires_grad = not self.freeze_cv

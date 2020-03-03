@@ -11,7 +11,7 @@ dataset:
   - 0.0
   - 0.0
   - 0.0
-  name: shapenet
+  name: shapenet_depth
   normalization: true # false
   num_classes: 13
   predict:
@@ -39,7 +39,7 @@ loss:
     depth: 0.0 # 1000
 model:
   align_with_tensorflow: false
-  backbone: costvolume
+  backbone: vgg16
   coord_dim: 3
   gconv_activation: true
   hidden_dim: 256
@@ -76,3 +76,4 @@ train:
   test_epochs: 1
   use_augmentation: true
 version: null
+

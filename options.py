@@ -23,6 +23,7 @@ options.log_level = "info"
 options.summary_dir = "summary"
 options.checkpoint_dir = "checkpoints"
 options.checkpoint = None
+options.mvsnet_checkpoint = None
 
 options.dataset = edict()
 options.dataset.name = "shapenet"
@@ -169,6 +170,8 @@ def reset_options(options, args, phase='train'):
         options.train.num_epochs = args.num_epochs
     if hasattr(args, "checkpoint") and args.checkpoint:
         options.checkpoint = args.checkpoint
+    if hasattr(args, "mvsnet_checkpoint") and args.mvsnet_checkpoint:
+        options.mvsnet_checkpoint = args.mvsnet_checkpoint
     if hasattr(args, "folder") and args.folder:
         options.dataset.predict.folder = args.folder
     if hasattr(args, "gpus") and args.gpus:

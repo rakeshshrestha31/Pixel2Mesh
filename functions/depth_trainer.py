@@ -6,46 +6,27 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from functions.base import CheckpointRunner
-from functions.evaluator import Evaluator
+from functions.depth_evaluator import DepthEvaluator
 from functions.check_best import CheckBest
-from models.classifier import Classifier
-from models.losses.classifier import CrossEntropyLoss
+from models.backbones.costvolume import MVSNet
 from models.losses.p2m import P2MLoss
-from models.p2m import P2MModel
 from utils.average_meter import AverageMeter
-from utils.mesh import Ellipsoid
 from utils.misc import *
 from utils.tensor import recursive_detach
-from utils.vis.renderer import MeshRenderer
+from utils.vis.depth_renderer import DepthRenderer
 
-
-class Trainer(CheckpointRunner):
+class DepthTrainer(CheckpointRunner):
 
     # noinspection PyAttributeOutsideInit
     def init_fn(self, shared_model=None, **kwargs):
-        if self.options.model.name == "pixel2mesh":
-            # Visualization renderer
-            self.renderer = MeshRenderer(self.options.dataset.camera_f, self.options.dataset.camera_c,
-                                         self.options.dataset.mesh_pos)
-
-            # create ellipsoid
-            self.ellipsoid = Ellipsoid(self.options.dataset.mesh_pos)
-        else:
-            self.renderer = None
+        # Visualization renderer
+        self.renderer = DepthRenderer()
 
         if shared_model is not None:
             self.model = shared_model
         else:
-            if self.options.model.name == "pixel2mesh":
-                # create model
-                self.model = P2MModel(self.options.model, self.ellipsoid,
-                                      self.options.dataset.camera_f, self.options.dataset.camera_c,
-                                      self.options.dataset.mesh_pos, self.options.train.freeze_cv,
-                                      self.options.mvsnet_checkpoint)
-            elif self.options.model.name == "classifier":
-                self.model = Classifier(self.options.model, self.options.dataset.num_classes)
-            else:
-                raise NotImplementedError("Your model is not found")
+            # create model
+            self.model = MVSNet(freeze_cv=False)
             self.model = torch.nn.DataParallel(self.model, device_ids=self.gpus).cuda()
 
         # Setup a joint optimizer for the 2 models
@@ -71,21 +52,15 @@ class Trainer(CheckpointRunner):
         )
 
         # Create loss functions
-        if self.options.model.name == "pixel2mesh":
-            self.criterion = P2MLoss(
-                self.options.loss, self.ellipsoid,
-                self.options.train.upsampled_chamfer_loss
-            ).cuda()
-        elif self.options.model.name == "classifier":
-            self.criterion = CrossEntropyLoss()
-        else:
-            raise NotImplementedError("Your loss is not found")
+        self.criterion = P2MLoss.depth_loss
 
         # Create AverageMeters for losses
         self.losses = AverageMeter()
 
         # Evaluators
-        self.evaluators = [Evaluator(self.options, self.logger, self.summary_writer, shared_model=self.model)]
+        self.evaluators = [DepthEvaluator(
+            self.options, self.logger, self.summary_writer, shared_model=self.model
+        )]
 
         self.check_best_metrics = [
             # CheckBest('loss', 'best_train_loss', is_loss=True),
@@ -103,12 +78,18 @@ class Trainer(CheckpointRunner):
     def train_step(self, input_batch):
         self.model.train()
         input_batch = tocuda(input_batch)
-
+        model_input = {
+            key: input_batch[key]
+            for key in ['images', 'proj_matrices', 'depth_values']
+        }
         # predict with model
-        out = self.model(input_batch)
+        out = self.model(model_input)
 
         # compute loss
-        loss, loss_summary = self.criterion(out, input_batch)
+        loss = self.criterion(
+            out['depths'], input_batch['depths'], input_batch['masks']
+        )
+        loss_summary = {'loss_depth': loss}
         self.losses.update(loss.detach().cpu().item())
 
         # Do backprop
@@ -183,13 +164,10 @@ class Trainer(CheckpointRunner):
     def train_summaries(self, input_batch, out_summary, loss_summary):
         if self.renderer is not None:
             # Do visualization for the first 2 images of the batch
-            render_mesh = self.renderer.p2m_batch_visualize(
-                input_batch, out_summary,
-                self.ellipsoid.faces
+            render_depth = self.renderer.depth_batch_visualize(
+                input_batch, out_summary
             )
-            self.summary_writer.add_image("render_mesh", render_mesh, self.step_count)
-            self.summary_writer.add_histogram("length_distribution", input_batch["length"].cpu().numpy(),
-                                              self.step_count)
+            self.summary_writer.add_image("render_depth", render_depth, self.step_count)
 
         # Debug info for filenames
         self.logger.debug(input_batch["filename"])
@@ -200,13 +178,14 @@ class Trainer(CheckpointRunner):
 
         # Save results to log
         self.logger.info(
-            "Epoch %03d, Step %06d/%06d, Time elapsed %s, Loss %.9f (%.9f), loss_chamfer: (%.9f), loss_depth: (%.9f)" % (
+            "Epoch %03d, Step %06d/%06d, Time elapsed %s, Loss %.9f (%.9f)" % (
                 self.epoch_count, self.step_count,
                 self.options.train.num_epochs * len(self.dataset) // (
                             self.options.train.batch_size * self.options.num_gpus),
-                self.time_elapsed, self.losses.val, self.losses.avg,
-                loss_summary['loss_chamfer'], loss_summary['loss_depth']))
+                self.time_elapsed, self.losses.val, self.losses.avg
+        ))
 
     def test(self):
         for evaluator in self.evaluators:
             evaluator.evaluate()
+

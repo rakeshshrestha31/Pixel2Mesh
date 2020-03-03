@@ -12,6 +12,7 @@ import config
 from datasets.imagenet import ImageNet
 from datasets.dtu import MVSDataset
 from datasets.shapenet import ShapeNet, get_shapenet_collate, ShapeNetImageFolder
+from datasets.shapenet_depth import ShapeNetDepth
 from functions.saver import CheckpointSaver
 
 
@@ -75,6 +76,13 @@ class CheckpointRunner(object):
             intrinsics = self.intrinsics_from_dataset(dataset)
             return ShapeNet(config.SHAPENET_ROOT, dataset.subset_train if training else dataset.subset_eval,
                             dataset.mesh_pos, dataset.normalization, dataset.shapenet, intrinsics, training)
+        elif dataset.name == "shapenet_depth":
+            intrinsics = self.intrinsics_from_dataset(dataset)
+            return ShapeNetDepth(
+                config.SHAPENET_ROOT,
+                dataset.subset_train if training else dataset.subset_eval,
+                dataset.normalization, dataset.shapenet, intrinsics
+            )
         elif dataset.name == "shapenet_demo":
             return ShapeNetImageFolder(dataset.predict.folder, dataset.normalization, dataset.shapenet)
         elif dataset.name == "imagenet":

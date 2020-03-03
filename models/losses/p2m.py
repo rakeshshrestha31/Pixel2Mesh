@@ -93,7 +93,7 @@ class P2MLoss(nn.Module):
                                 requires_grad=depth_gt.requires_grad)
         else:
             return F.smooth_l1_loss(depth_est[mask], depth_gt[mask],
-                                    size_average=True)
+                                    reduction='mean')
 
     def upsampled_chamfer_dist(self, pred_coord, pred_faces, gt_coord):
         # upsample the predicted mesh to get better chamfer distance

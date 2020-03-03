@@ -4,13 +4,13 @@ import random
 import numpy as np
 import torch
 # import open3d as o3d
-from functions.trainer import Trainer
+from functions.depth_trainer import DepthTrainer
 from options import update_options, options, reset_options
 
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Pixel2Mesh Training Entrypoint')
+    parser = argparse.ArgumentParser(description='Pixel2Mesh-MVS Depth Training Entrypoint')
     parser.add_argument('--options', help='experiment options file name', required=False, type=str)
 
     args, rest = parser.parse_known_args()
@@ -22,29 +22,16 @@ def parse_args():
     # training
     parser.add_argument('--batch-size', help='batch size', type=int)
     parser.add_argument('--checkpoint', help='checkpoint file', type=str)
-    parser.add_argument('--mvsnet-checkpoint', help='mvsnet checkpoint file', type=str)
     parser.add_argument('--num-epochs', help='number of epochs', type=int)
     parser.add_argument('--version', help='version of task (timestamp by default)', type=str)
     parser.add_argument('--name', default='debug', type=str)
     parser.add_argument('--dataset', type=str)
-    parser.add_argument('--backbone', default='costvolume', type=str)
     parser.add_argument('--num_views', default=3, help='num_views', type=int)
     parser.add_argument('--seed', default=3, help='seed', type=int)
-    parser.add_argument('--freeze-cv', dest='freeze_cv', action='store_true')
-    parser.add_argument('--only-depth-training', dest='only_depth_training', action='store_true')
-    parser.add_argument('--all-loss-training', dest='only_depth_training', action='store_false')
     parser.add_argument('--depth-loss-weight', help='depth loss weight', type=float)
     parser.add_argument('--lr', help='initial learning rate', type=float)
     parser.add_argument('--lr-factor', help='learning rate factor', type=float)
     parser.add_argument('--lr-step', nargs='+', type=int)
-    parser.add_argument('--train-upsampled-chamfer-loss',
-                        dest='train_upsampled_chamfer_loss', action='store_true')
-    parser.add_argument('--test-upsampled-chamfer-loss',
-                        dest='test_upsampled_chamfer_loss', action='store_true')
-    parser.add_argument('--gconv-skip-connection',
-                        help='[none|add|concat]', type=str)
-    parser.set_defaults(only_depth_training=False)
-    parser.set_defaults(freeze_cv=False)
 
     args = parser.parse_args()
 
@@ -60,9 +47,10 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    trainer = Trainer(options, logger, writer)
+    trainer = DepthTrainer(options, logger, writer)
     trainer.train()
 
 
 if __name__ == "__main__":
     main()
+

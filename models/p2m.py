@@ -14,7 +14,8 @@ import config
 
 class P2MModel(nn.Module):
 
-    def __init__(self, options, ellipsoid, camera_f, camera_c, mesh_pos, freeze_cv=False):
+    def __init__(self, options, ellipsoid, camera_f, camera_c, mesh_pos,
+                 freeze_cv=False, mvsnet_checkpoint=''):
         super(P2MModel, self).__init__()
         self.freeze_cv = freeze_cv
         self.hidden_dim = options.hidden_dim
@@ -24,7 +25,8 @@ class P2MModel(nn.Module):
         self.gconv_activation = options.gconv_activation
         self.gconv_skip_connection = options.gconv_skip_connection.lower()
 
-        self.mvsnet = MVSNet(freeze_cv=self.freeze_cv)
+        self.mvsnet = MVSNet(freeze_cv=self.freeze_cv,
+                             checkpoint=mvsnet_checkpoint)
         self.vgg = VGG16P2M(n_classes_input=1, pretrained=False)
         # x3 for three views
         self.features_dim = (self.vgg.features_dim + self.coord_dim) * 3
