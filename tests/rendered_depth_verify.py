@@ -26,6 +26,7 @@ def parse_args():
                         help='xms executable for rendering depth')
     parser.add_argument('rendering_file', type=str, help='rendering_metadata.txt file')
     parser.add_argument('--render-depths', dest='render_depths', action='store_true')
+    parser.set_defaults(render_depths=False)
     return parser.parse_args()
 
 def split_path(path):
@@ -47,6 +48,7 @@ def read_images(args):
 
 def read_depths(args):
     labels = split_path(args.rendering_file)[-4:-2]
+    print(labels)
     depths_path = os.path.join(args.rendering_dir, *labels, 'rendering_depth')
     depths = []
     for i in range(24):
@@ -70,7 +72,7 @@ def preprocess_image(image):
     return torch.from_numpy(image)
 
 def verify_depths(args):
-    views = [1, 2, 6, 12, 15, 17, 18]
+    views = list(range(24)) # [1, 2, 6, 12, 15, 17, 18]
     labels = split_path(args.rendering_file)[-4:-2]
     if args.render_depths:
         depths = render_blender.render_object(labels, args, True)

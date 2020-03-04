@@ -39,6 +39,8 @@ P2M_IMG_SIZE = (224, 224)
 P2M_PRINCIPAL_POINT = (112, 112)
 P2M_MIN_POINT_DEPTH = 0.1
 P2M_MAX_POINT_DEPTH = 1.3
+RENDERING_RESIZE_FACTOR = 1 # 5
+RENDERING_DEPTH_SCALE = 1000
 
 def normal(v):
     norm = np.linalg.norm(v)
@@ -129,6 +131,19 @@ def remove_mesh_file(mesh_filename):
         os.remove(mesh_filename.replace('.obj', '.mtl'))
         os.remove(mesh_filename.replace('.obj', '.png'))
 
+def write_rendering_params(rendering_params_file, rendering_metadata,
+                           depth_dir):
+    rendering_size = [i * RENDERING_RESIZE_FACTOR for i in P2M_IMG_SIZE]
+    rendering_focal_length = P2M_FOCAL_LENGTH * RENDERING_RESIZE_FACTOR
+    rendering_params = [
+        rendering_size + [rendering_focal_length] \
+            + [P2M_MIN_POINT_DEPTH, P2M_MAX_POINT_DEPTH, RENDERING_DEPTH_SCALE] \
+            + projection_mat(*(camera_mat(extrinsics))).flatten().tolist() \
+            + [os.path.join(depth_dir, '{:02}'.format(view_idx))]
+        for view_idx, extrinsics in enumerate(rendering_metadata)
+    ]
+    np.savetxt(rendering_params_file, rendering_params, fmt='%s')
+
 def render_object(obj_category, args, return_depths):
     obj, category = obj_category
     original_mesh_file = os.path.join(
@@ -138,6 +153,9 @@ def render_object(obj_category, args, return_depths):
     normal_mesh_file = '/tmp/model_normal_{}_{}.obj'.format(obj, category)
     rendering_metadata_file = '{}/{}/{}/rendering/rendering_metadata.txt' \
                                 .format(args.rendering_dir, obj, category)
+    rendering_params_file = '/tmp/rendering_params_{}_{}.txt' \
+                                .format(obj, category)
+
     rendering_metadata = np.loadtxt(rendering_metadata_file)
 
     depth_dir = '{}/{}/{}/rendering_depth' \
@@ -152,16 +170,16 @@ def render_object(obj_category, args, return_depths):
         os.path.join(depth_dir, '{0:02}.png'.format(i))
         for i in range(len(rendering_metadata))
     ]
-    max_creation_time = 24 * 3600.
-    depth_files_available = [
-        os.path.isfile(depth_file) \
-                and (time.time() - os.path.getmtime(depth_file)) \
-                    < max_creation_time
-        for depth_file in depth_files
-    ]
-    if np.all(depth_files_available):
-        print('skipping', depth_dir)
-        return
+    # max_creation_time = 24 * 3600.
+    # depth_files_available = [
+    #     os.path.isfile(depth_file) \
+    #             and (time.time() - os.path.getmtime(depth_file)) \
+    #                 < max_creation_time
+    #     for depth_file in depth_files
+    # ]
+    # if np.all(depth_files_available):
+    #     print('skipping', depth_dir)
+    #     return
 
     print('Working with ', obj, category)
     print('mesh file ', original_mesh_file)
@@ -200,47 +218,28 @@ def render_object(obj_category, args, return_depths):
         print('[Error] Unable to load mesh', normal_mesh_file, str(e))
         return
 
-    depths = [] if return_depths else None
-    for view_id, extrinsics in enumerate(rendering_metadata):
-        depth_file_prefix = os.path.join(
-            depth_dir, '{0:02}'.format(view_id)
-        )
+    write_rendering_params(rendering_params_file, rendering_metadata, depth_dir)
+    print('writing', depth_dir)
+    subprocess.run([
+        args.xms_exec,
+        scaled_mesh_file, rendering_params_file
+    ], cwd=os.path.dirname(args.xms_exec)) # , stdout=subprocess.DEVNULL)
 
-        # avoid doing it again if done already
-        depth_file = depth_file_prefix + '.png'
-        depth_file_creation_interval = \
-                time.time() - os.path.getmtime(depth_file) < max_creation_time
-        if os.path.isfile(depth_file) and depth_file_creation_interval == max_creation_time:
-            print('skipping', depth_file)
-            continue
-
-        R, t = camera_mat(extrinsics)
-        proj_mat = projection_mat(R, t)
-        proj_mat_str = np.char.mod('%f', proj_mat.flatten()).tolist()
-
-        print('writing', depth_file_prefix)
-        subprocess.run([
-            'python', args.xms_exec,
-            '-texture', 'simpledepthmap',
-            scaled_mesh_file, depth_file_prefix,
-            '--intrinsics',
-            str(P2M_FOCAL_LENGTH),
-            str(P2M_PRINCIPAL_POINT[0]), str(P2M_PRINCIPAL_POINT[1]),
-            '--extrinsics', *proj_mat_str,
-            '--image_size', str(P2M_IMG_SIZE[0]), str(P2M_IMG_SIZE[1]),
-            '--min_point_depth', str(P2M_MIN_POINT_DEPTH),
-            '--max_point_depth', str(P2M_MAX_POINT_DEPTH),
-        ], cwd=os.path.dirname(args.xms_exec)) # , stdout=subprocess.DEVNULL)
-
-        if os.path.isfile(depth_file_prefix + '.png'):
-            print('written', depth_file_prefix)
-            depth = cv2.imread(depth_file_prefix + '.png', cv2.IMREAD_ANYDEPTH)
-        else:
-            print('[Error] unable to render', depth_file_prefix)
-            depth = None
-        if return_depths:
+    if return_depths:
+        depths = []
+        for view_idx in range(24):
+            depth_file = os.path.join(depth_dir, '{:02}.png'.format(view_idx))
+            depth = cv2.imread(depth_file, cv2.IMREAD_ANYDEPTH)
+            depth[depth == P2M_MAX_POINT_DEPTH * RENDERING_DEPTH_SCALE] = 0
+            print(depth.dtype, np.min(depth), np.max(depth), np.mean(depth))
+            depth = cv2.resize(depth, P2M_IMG_SIZE, interpolation=cv2.INTER_NEAREST)
+            print(depth.dtype, np.min(depth), np.max(depth), np.mean(depth))
+            cv2.imwrite(depth_file, depth)
             depths.append(depth)
+    else:
+        depths = None
 
+    os.remove(rendering_params_file)
     remove_mesh_file(normal_mesh_file)
     remove_mesh_file(scaled_mesh_file)
     return depths
