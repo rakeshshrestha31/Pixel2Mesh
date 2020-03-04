@@ -81,7 +81,7 @@ class Evaluator(CheckpointRunner):
         num_views = pred_depth.size(1)
         for i in range(batch_size):
             label = labels[i].cpu().item()
-            depth_loss = P2MLoss.depth_loss(
+            depth_loss = self.p2m_loss.depth_loss(
                 gt_depth[i], pred_depth[i], mask[i]
             )
             self.depth_loss[label].update(depth_loss)

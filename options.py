@@ -79,6 +79,8 @@ options.loss.weights.reconst = 0.
 options.loss.weights.depth = 1e-4
 options.loss.only_depth_training = False
 options.loss.num_chamfer_upsample = 4000
+# one of ['huber', 'berhu', 'l1', 'l2']
+options.loss.depth_loss_type = 'huber'
 
 options.train = edict()
 options.train.num_epochs = 200
@@ -185,6 +187,10 @@ def reset_options(options, args, phase='train'):
         options.dataset.num_views = args.num_views
     if hasattr(args, "only_depth_training") and args.only_depth_training is not None:
         options.loss.only_depth_training = args.only_depth_training
+    if hasattr(args, "depth_loss_type") \
+            and args.depth_loss_type is not None \
+            and args.depth_loss_type.lower() in ['huber', 'berhu', 'l1', 'l2']:
+        options.loss.depth_loss_type = args.depth_loss_type.lower()
     if hasattr(args, "freeze_cv") and args.freeze_cv is not None:
         options.train.freeze_cv = args.freeze_cv
     if hasattr(args, "depth_loss_weight") and args.depth_loss_weight is not None:

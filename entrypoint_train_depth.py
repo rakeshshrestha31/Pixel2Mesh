@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument('--num_views', default=3, help='num_views', type=int)
     parser.add_argument('--seed', default=3, help='seed', type=int)
     parser.add_argument('--depth-loss-weight', help='depth loss weight', type=float)
+    parser.add_argument('--depth-loss-type', help='depth loss type', type=str)
     parser.add_argument('--lr', help='initial learning rate', type=float)
     parser.add_argument('--lr-factor', help='learning rate factor', type=float)
     parser.add_argument('--lr-step', nargs='+', type=int)

@@ -13,6 +13,7 @@ from models.losses.p2m import P2MLoss
 from utils.average_meter import AverageMeter
 from utils.misc import *
 from utils.tensor import recursive_detach
+from utils.mesh import Ellipsoid
 from utils.vis.depth_renderer import DepthRenderer
 
 class DepthTrainer(CheckpointRunner):
@@ -52,7 +53,12 @@ class DepthTrainer(CheckpointRunner):
         )
 
         # Create loss functions
-        self.criterion = P2MLoss.depth_loss
+        self.ellipsoid = Ellipsoid(self.options.dataset.mesh_pos)
+        self.p2m_loss = P2MLoss(
+            self.options.loss, self.ellipsoid,
+            self.options.test.upsampled_chamfer_loss
+        ).cuda()
+        self.criterion = self.p2m_loss.depth_loss
 
         # Create AverageMeters for losses
         self.losses = AverageMeter()

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from models.layers.chamfer_wrapper import ChamferDist
 from models.layers.sample_points import PointSampler
 import numpy as np
+import functools
 
 class P2MLoss(nn.Module):
     def __init__(self, options, ellipsoid, upsampled_chamfer_loss=False):
@@ -20,6 +21,21 @@ class P2MLoss(nn.Module):
         self.ellipsoid = ellipsoid
         self.points_sampler = PointSampler(options.num_chamfer_upsample)
         self.upsampled_chamfer_loss = upsampled_chamfer_loss
+        self.depth_loss_function = self.get_depth_loss_function(options.depth_loss_type)
+        print('==> using depth loss', options.depth_loss_type)
+
+    def get_depth_loss_function(self, loss_type):
+        if loss_type == 'huber':
+            return (lambda x, y, mask: self.huber_loss(x[mask], y[mask]))
+        elif loss_type == 'berhu':
+            return self.adaptive_berhu_loss
+        elif loss_type == 'l1':
+            return (lambda x, y, mask: self.l1_loss(x[mask], y[mask]))
+        elif loss_type == 'l2':
+            return (lambda x, y, mask: \
+                        torch.sqrt(self.l2_loss(x[mask], y[mask])))
+        else:
+            print('unrecognized depth loss:', loss_type)
 
     def edge_regularization(self, pred, edges):
         """
@@ -84,16 +100,35 @@ class P2MLoss(nn.Module):
         device = torch.device('cpu') if device < 0 else torch.device(device)
         return device
 
+    ## BerHu (reverse huber loss)
+    #  adapted from https://github.com/xanderchf/MonoDepth-FPN-PyTorch/blob/
+    #                   9494306b59c1aa9e8ab85ecea48a65052ff509a5/main_fpn.py
     @staticmethod
-    def depth_loss(depth_gt, depth_est, mask):
+    def adaptive_berhu_loss(depth_gt, depth_est, mask, threshold=0.2):
+        mask = mask.type(depth_gt.dtype).to(depth_gt.device)
+        diff = torch.abs(depth_gt * mask - depth_est * mask)
+        delta = threshold * torch.max(diff).item()
+
+        l1_part = -F.threshold(-diff, -delta, 0.)
+        l2_part = F.threshold(diff**2 - delta**2, 0., -delta**2.) + delta**2
+        l2_part = l2_part / (2.*delta)
+
+        loss = l1_part + l2_part
+        loss = torch.mean(loss)
+        return loss
+
+    @staticmethod
+    def huber_loss(x, y):
+        return F.smooth_l1_loss(x, y, reduction='mean')
+
+    def depth_loss(self, depth_gt, depth_est, mask):
         mask = mask > 0.5
         if torch.all(mask == 0):
             return torch.tensor(0.0, dtype=depth_gt.dtype,
                                 device=P2MLoss.get_tensor_device(depth_gt),
                                 requires_grad=depth_gt.requires_grad)
         else:
-            return F.smooth_l1_loss(depth_est[mask], depth_gt[mask],
-                                    reduction='mean')
+            return self.depth_loss_function(depth_est, depth_gt, mask)
 
     def upsampled_chamfer_dist(self, pred_coord, pred_faces, gt_coord):
         # upsample the predicted mesh to get better chamfer distance

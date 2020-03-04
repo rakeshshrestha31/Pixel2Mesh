@@ -22,7 +22,7 @@ class DepthEvaluator(CheckpointRunner):
         super().__init__(options, logger, writer, training=False, shared_model=shared_model)
 
         self.check_best_metrics = [
-            CheckBest('depth_loss', 'best_test_loss_depth', is_loss=True),
+            CheckBest('huber_loss', 'best_test_huber_depth', is_loss=True),
             CheckBest('l1_loss', 'best_test_l1_depth', is_loss=True),
             CheckBest('l2_loss', 'best_test_l2_depth', is_loss=True),
         ]
@@ -54,13 +54,12 @@ class DepthEvaluator(CheckpointRunner):
         num_views = pred_depth.size(1)
         for i in range(batch_size):
             label = labels[i].cpu().item()
-            depth_loss = P2MLoss.depth_loss(
-                gt_depth[i], pred_depth[i], mask[i]
-            )
-            self.depth_loss[label].update(depth_loss)
-
             masked_gt = gt_depth[i] * mask[i]
             masked_pred = pred_depth[i] * mask[i]
+
+            huber_loss = P2MLoss.huber_loss(masked_gt, masked_pred)
+            self.huber_loss[label].update(huber_loss)
+
             l1_loss = self.l1_loss_model(masked_gt, masked_pred)
             self.l1_loss[label].update(l1_loss)
 
@@ -113,7 +112,7 @@ class DepthEvaluator(CheckpointRunner):
                                       shuffle=self.options.test.shuffle,
                                       collate_fn=self.dataset_collate_fn)
 
-        self.depth_loss = [AverageMeter() for _ in range(self.num_classes)]
+        self.huber_loss = [AverageMeter() for _ in range(self.num_classes)]
         self.l1_loss = [AverageMeter() for _ in range(self.num_classes)]
         self.l2_loss = [AverageMeter() for _ in range(self.num_classes)]
 
@@ -170,7 +169,7 @@ class DepthEvaluator(CheckpointRunner):
 
     def get_result_summary(self):
         return {
-            "depth_loss": self.average_of_average_meters(self.depth_loss),
+            "huber_loss": self.average_of_average_meters(self.huber_loss),
             "l1_loss": self.average_of_average_meters(self.l1_loss),
             "l2_loss": self.average_of_average_meters(self.l2_loss)
         }
