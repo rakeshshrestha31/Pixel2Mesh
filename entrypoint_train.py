@@ -34,6 +34,12 @@ def parse_args():
     parser.add_argument('--only-depth-training', dest='only_depth_training', action='store_true')
     parser.add_argument('--all-loss-training', dest='only_depth_training', action='store_false')
     parser.add_argument('--depth-loss-weight', help='depth loss weight', type=float)
+    parser.add_argument('--rendered-vs-cv-depth-loss-weight',
+                        help='rendered vs cv predicted depth loss weight',
+                        nargs='+', type=float)
+    parser.add_argument('--rendered-vs-gt-depth-loss-weight',
+                        help='rendered vs cv predicted depth loss weight',
+                        nargs='+', type=float)
     parser.add_argument('--lr', help='initial learning rate', type=float)
     parser.add_argument('--lr-factor', help='learning rate factor', type=float)
     parser.add_argument('--lr-step', nargs='+', type=int)

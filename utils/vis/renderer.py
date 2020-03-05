@@ -107,7 +107,7 @@ class MeshRenderer(object):
         return img
 
     def visualize_reconstruction(self, gt_coord, coord, faces, images,
-                                 pred_depths, gt_depths, masks,
+                                 pred_depths, gt_depths, rendered_depth, masks,
                                  mesh_only=False, **kwargs):
         camera_k = np.array([[self.camera_f[0], 0, self.camera_c[0]],
                              [0, self.camera_f[1], self.camera_c[1]],
@@ -125,11 +125,20 @@ class MeshRenderer(object):
                                            camera_k, dist_coeffs, rvec, tvec, **kwargs)
         pred_pc, _ = self._render_pointcloud(coord, images[0].shape[2], images[0].shape[1],
                                              camera_k, dist_coeffs, rvec, tvec, **kwargs)
+        # get all views from the depths
         pred_depths = [self._1to3channel(i) for i in pred_depths]
         gt_depths = [self._1to3channel(i) for i in gt_depths]
         masks = [self._1to3channel(i) for i in masks]
+        rendered_depths = [
+            self._1to3channel(rendered_depth[view_idx])
+            for view_idx in range(rendered_depth.shape[0])
+        ]
+
         # return np.concatenate((images[0], gt_pc, pred_pc), 2)
-        return np.concatenate((*images, *pred_depths, *gt_depths, gt_pc, pred_pc, mesh), 2)
+        return np.concatenate((
+            *images, *pred_depths, *gt_depths, *rendered_depths,
+            gt_pc, pred_pc, mesh
+        ), 2)
 
     def p2m_batch_visualize(self, batch_input, batch_output, faces, atmost=3):
         """
@@ -157,8 +166,12 @@ class MeshRenderer(object):
             for j in range(3):
                 for k in (["pred_coord_before_deform", "pred_coord"] if j == 0 else ["pred_coord"]):
                     coord = batch_output[k][j][i].cpu().numpy() + mesh_pos
+                    depth_key = k.replace("pred_coord", "rendered_depths")
+                    rendered_depth = batch_output[depth_key][j][i].detach() \
+                                        .cpu().numpy()
                     images_stack.append(self.visualize_reconstruction(
-                        gt_points, coord, faces[j].cpu().numpy(), images, pred_depths, gt_depths, masks
+                        gt_points, coord, faces[j].cpu().numpy(), images,
+                        pred_depths, gt_depths, rendered_depth, masks
                     ))
                     # write_point_cloud(coord, '/tmp/{}_{}_{}.ply'.format(i, j, k))
 

@@ -77,6 +77,10 @@ options.loss.weights.chamfer = [1., 1., 1.]
 options.loss.weights.chamfer_opposite = 1.
 options.loss.weights.reconst = 0.
 options.loss.weights.depth = 1e-4
+# rendered loss depth compared with costvolume predicted depth
+options.loss.weights.rendered_vs_cv_depth = [0.1, 0.1, 0.1]
+# rendered loss depth compared with ground truth  depth
+options.loss.weights.rendered_vs_gt_depth = [0.1, 0.1, 0.1]
 options.loss.only_depth_training = False
 options.loss.num_chamfer_upsample = 4000
 # one of ['huber', 'berhu', 'l1', 'l2']
@@ -195,6 +199,16 @@ def reset_options(options, args, phase='train'):
         options.train.freeze_cv = args.freeze_cv
     if hasattr(args, "depth_loss_weight") and args.depth_loss_weight is not None:
         options.loss.weights.depth = args.depth_loss_weight
+    if hasattr(args, "rendered_vs_cv_depth_loss_weight") \
+            and args.rendered_vs_cv_depth_loss_weight is not None\
+            and len(args.rendered_vs_cv_depth_loss_weight) == 3:
+        options.loss.weights.rendered_vs_cv_depth \
+            = args.rendered_vs_cv_depth_loss_weight
+    if hasattr(args, "rendered_vs_gt_depth_loss_weight") \
+            and args.rendered_vs_gt_depth_loss_weight is not None\
+            and len(args.rendered_vs_gt_depth_loss_weight) == 3:
+        options.loss.weights.rendered_vs_gt_depth \
+            = args.rendered_vs_gt_depth
     if hasattr(args, "lr") and args.lr is not None:
         options.optim.lr = args.lr
     if hasattr(args, "lr_factor") and args.lr_factor is not None:

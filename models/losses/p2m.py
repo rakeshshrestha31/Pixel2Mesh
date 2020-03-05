@@ -7,6 +7,8 @@ from models.layers.sample_points import PointSampler
 import numpy as np
 import functools
 
+import config
+
 class P2MLoss(nn.Module):
     def __init__(self, options, ellipsoid, upsampled_chamfer_loss=False):
         super().__init__()
@@ -122,8 +124,14 @@ class P2MLoss(nn.Module):
         return F.smooth_l1_loss(x, y, reduction='mean')
 
     def depth_loss(self, depth_gt, depth_est, mask):
+        if depth_est.size() != depth_gt.size():
+            depth_gt = F.interpolate(
+                depth_gt, size=depth_est.size()[-2:], mode='nearest'
+            ).clone()
+
         mask = mask > 0.5
         if torch.all(mask == 0):
+            # print('entire mask 0')
             return torch.tensor(0.0, dtype=depth_gt.dtype,
                                 device=P2MLoss.get_tensor_device(depth_gt),
                                 requires_grad=depth_gt.requires_grad)
@@ -150,7 +158,10 @@ class P2MLoss(nn.Module):
         :return: loss, loss_summary (dict)
         """
 
+        device = device=targets["images"].device
         chamfer_loss, edge_loss, normal_loss, lap_loss, move_loss, depth_loss = 0., 0., 0., 0., 0., 0.
+        rendered_vs_cv_depth_loss = torch.tensor(0., device=device)
+        rendered_vs_gt_depth_loss = torch.tensor(0., device=device)
         lap_const = [0.2, 1., 1.]
 
         gt_coord, gt_normal, \
@@ -159,6 +170,8 @@ class P2MLoss(nn.Module):
         pred_coord = outputs["pred_coord"]
         pred_coord_before_deform = outputs["pred_coord_before_deform"]
         pred_depths = outputs["depths"]
+        rendered_depths, rendered_depths_before_deform = \
+            outputs["rendered_depths"], outputs["rendered_depths_before_deform"]
         image_loss = 0.
 
         # TODO uncommit this line
@@ -200,6 +213,17 @@ class P2MLoss(nn.Module):
             lap_loss += lap_const[i] * lap
             move_loss += lap_const[i] * move
 
+            all_valid_masks = torch.ones(
+                *(masks.size()), dtype=torch.uint8, device=masks.device
+            )
+            rendered_vs_cv_depth_loss += \
+                self.options.weights.rendered_vs_cv_depth[i] \
+                    * self.depth_loss(rendered_depths[i],
+                                      pred_depths * masks, all_valid_masks)
+            rendered_vs_gt_depth_loss += \
+                self.options.weights.rendered_vs_gt_depth[i] \
+                    * self.depth_loss(rendered_depths[i], gt_depths,
+                                      all_valid_masks)
         depth_loss += self.depth_loss(gt_depths, pred_depths, masks)
 
         #
@@ -211,13 +235,14 @@ class P2MLoss(nn.Module):
                    self.options.weights.move * move_loss + \
                    self.options.weights.edge * edge_loss + \
                    self.options.weights.normal * normal_loss + \
-                   self.options.weights.depth * depth_loss
+                   self.options.weights.depth * depth_loss + \
+                   rendered_vs_gt_depth_loss + \
+                   rendered_vs_cv_depth_loss
 
         # loss = depth_loss
 
         loss = loss * self.options.weights.constant
-
-        return loss, {
+        loss_summary = {
             "loss": loss,
             "loss_chamfer": chamfer_loss / np.sum(self.options.weights.chamfer),
             "loss_edge": edge_loss,
@@ -225,4 +250,29 @@ class P2MLoss(nn.Module):
             "loss_move": move_loss,
             "loss_normal": normal_loss,
             "loss_depth": depth_loss,
+            "loss_rendered_vs_cv_depth": \
+                rendered_vs_cv_depth_loss \
+                    / np.sum(self.options.weights.rendered_vs_cv_depth),
+            "loss_rendered_vs_gt_depth": \
+                rendered_vs_gt_depth_loss \
+                    / np.sum(self.options.weights.rendered_vs_gt_depth),
         }
+        nan_losses = {
+            key: value.item() for key, value in loss_summary.items()
+            if torch.isnan(value)
+        }
+        nan_rendered_depths = [torch.any(torch.isnan(i)).item()
+                              for i in rendered_depths]
+        nan_pred_coord = [torch.any(torch.isnan(i)).item() for i in pred_coord]
+        if np.any(nan_losses):
+            print('nan_losses:', nan_losses)
+            print('rendered losses:', rendered_vs_gt_depth_loss,
+                                      rendered_vs_cv_depth_loss)
+        if np.any(nan_rendered_depths):
+            print('rendered depths nan:', nan_rendered_depths)
+        if np.any(nan_pred_coord):
+            print('pred coord nan:', nan_pred_coord)
+        if torch.any(torch.isnan(pred_depths)):
+            print('pred depth nan')
+        return loss, loss_summary
+

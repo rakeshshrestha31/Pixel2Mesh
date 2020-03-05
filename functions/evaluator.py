@@ -24,6 +24,8 @@ class Evaluator(CheckpointRunner):
         self.check_best_metrics = [
             CheckBest('cd', 'best_test_loss_chamfer', is_loss=True),
             CheckBest('depth_loss', 'best_test_loss_depth', is_loss=True),
+            CheckBest('r_gt_depth_loss', 'best_test_loss_rendered_vs_gt',
+                      is_loss=True),
             CheckBest('f1_tau', 'best_test_f1_tau', is_loss=False),
             CheckBest('f1_2tau', 'best_test_f1_2tau', is_loss=False)
         ]
@@ -76,15 +78,17 @@ class Evaluator(CheckpointRunner):
         prec = np.sum(dis_to_pred < thresh) / pred_length
         return 2 * prec * recall / (prec + recall + 1e-8)
 
-    def evaluate_depth_loss(self, pred_depth, gt_depth, mask, labels):
+    def evaluate_depth_loss(self, gt_depth, pred_depth,
+                            mask, labels, depth_loss):
         batch_size = pred_depth.size(0)
         num_views = pred_depth.size(1)
         for i in range(batch_size):
             label = labels[i].cpu().item()
-            depth_loss = self.p2m_loss.depth_loss(
-                gt_depth[i], pred_depth[i], mask[i]
+            loss = self.p2m_loss.depth_loss(
+                gt_depth[i].unsqueeze(0), pred_depth[i].unsqueeze(0),
+                mask[i].unsqueeze(0)
             )
-            self.depth_loss[label].update(depth_loss)
+            depth_loss[label].update(loss)
 
     def evaluate_chamfer_and_f1(self, pred_vertices, pred_faces,
                                 gt_points, labels):
@@ -149,7 +153,26 @@ class Evaluator(CheckpointRunner):
                 )
                 self.evaluate_depth_loss(
                     out["depths"], input_batch["depths"],
-                    input_batch["masks"], input_batch["labels"]
+                    input_batch["masks"], input_batch["labels"],
+                    self.depth_loss
+                )
+
+                all_valid_masks = torch.ones(
+                    *(input_batch["masks"].size()), dtype=torch.uint8,
+                    device=input_batch["masks"].device
+                )
+                # don't mask rendered_depth cuz
+                # depth rendered outside the mask is also incorrect
+                self.evaluate_depth_loss(
+                    out["rendered_depths"][-1],
+                    out["depths"] * input_batch["masks"],
+                    all_valid_masks, input_batch["labels"],
+                    self.rendered_vs_cv_depth_loss,
+                )
+                self.evaluate_depth_loss(
+                    out["rendered_depths"][-1], input_batch["depths"],
+                    all_valid_masks, input_batch["labels"],
+                    self.rendered_vs_gt_depth_loss
                 )
             elif self.options.model.name == "classifier":
                 self.evaluate_accuracy(out, input_batch["labels"])
@@ -175,6 +198,12 @@ class Evaluator(CheckpointRunner):
             self.f1_tau = [AverageMeter() for _ in range(self.num_classes)]
             self.f1_2tau = [AverageMeter() for _ in range(self.num_classes)]
             self.depth_loss = [AverageMeter() for _ in range(self.num_classes)]
+            self.rendered_vs_cv_depth_loss = [
+                AverageMeter() for _ in range(self.num_classes)
+            ]
+            self.rendered_vs_gt_depth_loss = [
+                AverageMeter() for _ in range(self.num_classes)
+            ]
         elif self.options.model.name == "classifier":
             self.acc_1 = AverageMeter()
             self.acc_5 = AverageMeter()
@@ -235,6 +264,10 @@ class Evaluator(CheckpointRunner):
             return {
                 "cd": self.average_of_average_meters(self.chamfer_distance),
                 "depth_loss": self.average_of_average_meters(self.depth_loss),
+                "r_cv_depth_loss":
+                    self.average_of_average_meters(self.rendered_vs_cv_depth_loss),
+                "r_gt_depth_loss": \
+                    self.average_of_average_meters(self.rendered_vs_gt_depth_loss),
                 "f1_tau": self.average_of_average_meters(self.f1_tau),
                 "f1_2tau": self.average_of_average_meters(self.f1_2tau),
             }

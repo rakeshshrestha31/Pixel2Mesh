@@ -200,12 +200,17 @@ class Trainer(CheckpointRunner):
 
         # Save results to log
         self.logger.info(
-            "Epoch %03d, Step %06d/%06d, Time elapsed %s, Loss %.9f (%.9f), loss_chamfer: (%.9f), loss_depth: (%.9f)" % (
+            "Epoch %03d, Step %06d/%06d, Time elapsed %s, Loss %.9f (%.9f), "
+            "loss_chamfer: (%.9f), loss_depth: (%.9f), "
+            "r_cv_depth_loss: (%.9f), r_gt_depth_loss: (%.9f)" % (
                 self.epoch_count, self.step_count,
                 self.options.train.num_epochs * len(self.dataset) // (
                             self.options.train.batch_size * self.options.num_gpus),
                 self.time_elapsed, self.losses.val, self.losses.avg,
-                loss_summary['loss_chamfer'], loss_summary['loss_depth']))
+                loss_summary['loss_chamfer'], loss_summary['loss_depth'],
+                loss_summary['loss_rendered_vs_cv_depth'],
+                loss_summary['loss_rendered_vs_gt_depth']
+        ))
 
     def test(self):
         for evaluator in self.evaluators:
