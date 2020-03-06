@@ -208,7 +208,7 @@ def reset_options(options, args, phase='train'):
             and args.rendered_vs_gt_depth_loss_weight is not None\
             and len(args.rendered_vs_gt_depth_loss_weight) == 3:
         options.loss.weights.rendered_vs_gt_depth \
-            = args.rendered_vs_gt_depth
+            = args.rendered_vs_gt_depth_loss_weight
     if hasattr(args, "lr") and args.lr is not None:
         options.optim.lr = args.lr
     if hasattr(args, "lr_factor") and args.lr_factor is not None:

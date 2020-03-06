@@ -31,10 +31,9 @@ class P2MModel(nn.Module):
 
         self.mvsnet = MVSNet(freeze_cv=self.freeze_cv,
                              checkpoint=mvsnet_checkpoint)
-        self.vgg = VGG16P2M(n_classes_input=1, pretrained=False)
-        # x2 for rendered depth features from previous GCN block
+        self.vgg = VGG16P2M(n_classes_input=2, pretrained=False)
         # x3 for three views
-        self.features_dim = ((self.vgg.features_dim * 2) + self.coord_dim) * 3
+        self.features_dim = (self.vgg.features_dim  + self.coord_dim) * 3
         print("===> number of P2MModel features:", self.features_dim)
 
         self.gcns = nn.ModuleList([
@@ -172,6 +171,7 @@ class P2MModel(nn.Module):
         img_shape = self.projection.image_feature_shape(img[0])
 
         rendered_depths_before_deform = [None for _ in range(3)]
+        rendered_depths = [None for _ in range(3)]
         batched_faces = [
             self.ellipsoid.faces[i].unsqueeze(0).expand(batch_size, -1, -1)
             for i in range(3)
@@ -186,22 +186,40 @@ class P2MModel(nn.Module):
             joint_features = P2MModel.join_features(img_feats, depth_feats)
             return [unflatten_batch_view(i) for i in joint_features]
 
+        ##
+        #  @param input1 batch x view x h x w
+        #  @param input2 batch x view x h x w
+        def get_joint_features(input1, input2, model):
+            # unsqeeze 1 to simulate channels (single channel)
+            input1 = P2MModel.flatten_batch_view(input1).unsqueeze(1)
+            input2 = P2MModel.flatten_batch_view(input2).unsqueeze(1)
+            joint_input = torch.cat((input1, input2), dim=1)
+            joint_features = self.vgg(joint_input)
+            return [unflatten_batch_view(i) for i in joint_features]
+
         out_mvsnet = self.mvsnet(input_batch)
-        # unsqeeze 1 to simulate channels (single channel)
-        vgg_input = self.flatten_batch_view(
-            out_mvsnet["depths"] * masks
-        ).unsqueeze(1)
-        vgg_input = F.interpolate(
-            vgg_input, size=[config.IMG_SIZE, config.IMG_SIZE], mode='nearest'
+        masked_pred_depth = out_mvsnet["depths"] * masks
+        masked_pred_depth = F.interpolate(
+            masked_pred_depth, [config.IMG_SIZE, config.IMG_SIZE], mode='nearest'
         )
-        img_feats = self.vgg(vgg_input)
+
+        # unsqeeze 1 to simulate channels (single channel)
+        # vgg_input = self.flatten_batch_view(
+        #     out_mvsnet["depths"] * masks
+        # ).unsqueeze(1)
+        # vgg_input = F.interpolate(
+        #     vgg_input, size=[config.IMG_SIZE, config.IMG_SIZE], mode='nearest'
+        # )
+        # img_feats = self.vgg(vgg_input)
 
         init_pts = self.init_pts.data.unsqueeze(0).expand(batch_size, -1, -1)
 
-        rendered_depths_before_deform[0], rendered_depth_feats = \
-                self.get_rendered_depth_features(init_pts, batched_faces[0],
-                                                 proj_mat, img_shape)
-        joint_features = join_features(img_feats, rendered_depth_feats)
+        rendered_depths_before_deform[0] = self.mesh_to_depth(
+            init_pts, batched_faces[0], proj_mat, img_shape
+        )
+        joint_features = get_joint_features(
+            masked_pred_depth, rendered_depths_before_deform[0], self.vgg
+        )
 
         # GCN Block 1
         # x1 shape is torch.Size([16, 156, 3]), x_h
@@ -218,10 +236,12 @@ class P2MModel(nn.Module):
         # before deformation 2
         x1_up = self.unpooling[0](x1)
 
-        rendered_depths_before_deform[1], rendered_depth_feats = \
-                self.get_rendered_depth_features(x1, batched_faces[0],
-                                                 proj_mat, img_shape)
-        joint_features = join_features(img_feats, rendered_depth_feats)
+        rendered_depths_before_deform[1] = self.mesh_to_depth(
+            x1, batched_faces[0], proj_mat, img_shape
+        )
+        joint_features = get_joint_features(
+            masked_pred_depth, rendered_depths_before_deform[1], self.vgg
+        )
 
         # GCN Block 2
         x = self.cross_view_feature_pooling(
@@ -239,10 +259,12 @@ class P2MModel(nn.Module):
         # before deformation 3
         x2_up = self.unpooling[1](x2)
 
-        rendered_depths_before_deform[2], rendered_depth_feats = \
-                self.get_rendered_depth_features(x2, batched_faces[1],
-                                                 proj_mat, img_shape)
-        joint_features = join_features(img_feats, rendered_depth_feats)
+        rendered_depths_before_deform[2] = self.mesh_to_depth(
+            x2, batched_faces[1], proj_mat, img_shape
+        )
+        joint_features = get_joint_features(
+            masked_pred_depth, rendered_depths_before_deform[2], self.vgg
+        )
 
         # GCN Block 3
         # x2 shape is torch.Size([16, 618, 3])
