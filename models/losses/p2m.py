@@ -138,18 +138,34 @@ class P2MLoss(nn.Module):
         else:
             return self.depth_loss_function(depth_est, depth_gt, mask)
 
-    def upsampled_chamfer_dist(self, pred_coord, pred_faces, gt_coord):
-        # upsample the predicted mesh to get better chamfer distance
-        if pred_coord.size(1) < self.points_sampler.point_num:
-            upsampled_pred_coord, _ = self.points_sampler(
-                pred_coord, pred_faces
+    ##
+    #  @param pred_coord tensor of coords
+    def upsample_coords(self, coords, faces):
+        # make sure that all clouds have the same number of points
+        self.points_sampler.point_num = self.options.num_chamfer_upsample \
+                                      - coords.size(1)
+        if coords.size(1) < self.points_sampler.point_num:
+            upsampled_coords, _ = self.points_sampler(
+                coords, faces
             )
+            # add original coords too for good measure
+            # note: the original coords should be before the upsampled ones
+            # otherwise the normal loss will be messed up
+            upsampled_coords = torch.cat((coords, upsampled_coords), dim=1)
         else:
-            upsampled_pred_coord = pred_coord
-        return self.chamfer_dist(
-            gt_coord,
-            upsampled_pred_coord
-        )
+            upsampled_coords = coords
+        return upsampled_coords
+
+    ##
+    #  @param pred_coord list of coords at different resolution
+    def get_upsampled_coords(self, pred_coord):
+        upsampled_pred_coord = [None for _ in range(len(pred_coord))]
+        for i in range(len(pred_coord)):
+            faces = self.ellipsoid.faces[i] \
+                        .unsqueeze(0) \
+                        .repeat(pred_coord[i].size(0), 1, 1)
+            upsampled_pred_coord[i] = self.upsample_coords(pred_coord[i], faces)
+        return upsampled_pred_coord
 
     def forward(self, outputs, targets):
         """
@@ -178,21 +194,15 @@ class P2MLoss(nn.Module):
         if outputs["reconst"] is not None and self.options.weights.reconst != 0:
             image_loss = self.image_loss(gt_images, outputs["reconst"])
 
+        if self.upsampled_chamfer_loss:
+            upsampled_pred_coord = self.get_upsampled_coords(pred_coord)
+        else:
+            upsampled_pred_coord = pred_coord
+
         for i in range(3):
-            if self.upsampled_chamfer_loss:
-                # repeat the faces for all items in the batch
-                faces = self.ellipsoid.faces[i] \
-                            .unsqueeze(0) \
-                            .repeat(pred_coord[0].size(0), 1, 1)
-
-                dist1, dist2, idx1, idx2 = self.upsampled_chamfer_dist(
-                    pred_coord[i], faces, gt_coord
-                )
-            else:
-                dist1, dist2, idx1, idx2 = self.chamfer_dist(
-                    gt_coord, pred_coord[i]
-                )
-
+            dist1, dist2, idx1, idx2 = self.chamfer_dist(
+                gt_coord, upsampled_pred_coord[i]
+            )
             chamfer_loss += self.options.weights.chamfer[i] * ( \
                 torch.mean(dist1) \
                 + self.options.weights.chamfer_opposite \

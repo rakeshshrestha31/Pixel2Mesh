@@ -96,17 +96,20 @@ class Evaluator(CheckpointRunner):
         # therefore cannot be batched
         batch_size = pred_vertices.size(0)
         pred_length = pred_vertices.size(1)
+        if self.upsampled_chamfer_loss:
+            upsampled_pred_vertices = self.p2m_loss.upsample_coords(
+                pred_vertices,
+                pred_faces.unsqueeze(0).repeat(pred_vertices.size(0), 1, 1)
+            )
+        else:
+            upsampled_pred_vertices = pred_vertices
         for i in range(batch_size):
             gt_length = gt_points[i].size(0)
             label = labels[i].cpu().item()
-            if self.upsampled_chamfer_loss:
-                d1, d2, i1, i2 = self.p2m_loss.upsampled_chamfer_dist(
-                    pred_vertices[i].unsqueeze(0),
-                    pred_faces.unsqueeze(0),
-                    gt_points[i].unsqueeze(0)
-                )
-            else:
-                d1, d2, i1, i2 = self.chamfer(pred_vertices[i].unsqueeze(0), gt_points[i].unsqueeze(0))
+            d1, d2, i1, i2 = self.p2m_loss.chamfer_dist(
+                gt_points[i].unsqueeze(0),
+                upsampled_pred_vertices[i].unsqueeze(0)
+            )
             d1, d2 = d1.cpu().numpy(), d2.cpu().numpy()  # convert to millimeter
             self.chamfer_distance[label].update(np.mean(d1) + np.mean(d2))
             self.f1_tau[label].update(self.evaluate_f1(d1, d2, pred_length, gt_length, 1E-4))

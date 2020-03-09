@@ -82,7 +82,7 @@ options.loss.weights.rendered_vs_cv_depth = [0.1, 0.1, 0.1]
 # rendered loss depth compared with ground truth  depth
 options.loss.weights.rendered_vs_gt_depth = [0.1, 0.1, 0.1]
 options.loss.only_depth_training = False
-options.loss.num_chamfer_upsample = 4000
+options.loss.num_chamfer_upsample = 6466
 # one of ['huber', 'berhu', 'l1', 'l2']
 options.loss.depth_loss_type = 'huber'
 
