@@ -13,8 +13,15 @@ class P2MLoss(nn.Module):
     def __init__(self, options, ellipsoid, upsampled_chamfer_loss=False):
         super().__init__()
         self.options = options
-        self.l1_loss = nn.L1Loss(reduction='mean')
-        self.l2_loss = nn.MSELoss(reduction='mean')
+        # MSELoss/L1Loss likely to give NaN gradients if input == output
+        # self.l1_loss = nn.L1Loss(reduction='mean')
+        # self.l2_loss = nn.MSELoss(reduction='mean')
+
+        self.epsilon = 1e-10
+        self.l1_loss = lambda x, y: (torch.abs(x - y) + self.epsilon).mean()
+        self.l2_loss = lambda x, y: ((torch.abs(x - y) + self.epsilon) ** 2) \
+                                        .mean()
+
         self.chamfer_dist = ChamferDist()
         self.laplace_idx = nn.ParameterList([
             nn.Parameter(idx, requires_grad=False) for idx in ellipsoid.laplace_idx])
