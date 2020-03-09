@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import trimesh
 from scipy.sparse import coo_matrix
+import itertools
 
 import config
 
@@ -63,3 +64,31 @@ class Ellipsoid(object):
             faces = np.loadtxt(face_file, dtype='|S32')
             self.obj_fmt_faces.append(faces)
             self.faces.append(torch.tensor(faces[:, 1:].astype(np.int) - 1))
+
+        # faces adjacent to each vertex
+        self.adj_faces = []
+        # since the number of faces a vertex can be adjacent to can vary
+        self.adj_faces_count = []
+        for i in range(3):
+            num_vertices = self.adj_mat[i].size(0)
+            adj_faces = [[] for _ in range(num_vertices)]
+            for face_idx, vertex_indices in enumerate(self.faces[i].unbind(0)):
+                for vertex_idx in vertex_indices:
+                    adj_faces[vertex_idx].append(face_idx)
+
+            adj_faces_count = torch.tensor(
+                [len(i) for i in adj_faces], dtype=torch.long
+            )
+
+            # make uniform sized by padding zeroes
+            # https://stackoverflow.com/questions/40569220/efficiently-convert-uneven-list-of-lists-to-minimal-containing-array-padded-with
+            adj_faces = torch.tensor(
+                list(itertools.zip_longest(*adj_faces, fillvalue=0)),
+                dtype=torch.long
+            ).transpose(0, 1)
+
+            self.adj_faces.append(adj_faces)
+            self.adj_faces_count.append(adj_faces_count)
+
+if __name__ == "__main__":
+    ellipsoid = Ellipsoid([0, 0, 0])
