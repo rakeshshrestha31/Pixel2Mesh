@@ -125,7 +125,8 @@ class Ellipsoid(object):
         vertex_cross_products = face_cross_products[:, adj_faces.view(-1)] \
                                     .view(batch_size, num_vertices, -1, 3)
         face_mask = adj_faces_mask.unsqueeze(0).unsqueeze(-1) \
-                                  .expand(batch_size, -1, -1, 3)
+                                  .expand(batch_size, -1, -1, 3) \
+                                  .to(coords.device)
         masked_vertex_cross_products = vertex_cross_products * face_mask
         # summing up adjacent faces' cross products is
         # equivalent to weighted sum of normal where weight = area of face
@@ -133,16 +134,13 @@ class Ellipsoid(object):
         vertex_normals = masked_vertex_cross_products.sum(dim=2)
         vertex_normals = F.normalize(vertex_normals, dim=-1)
 
-        # for debuggin the vertex normals
-        # visualize_vertex_normals(coords[0], faces, vertex_normals[0])
-
         return vertex_normals
 
 ##
 #  @param vertices num_points x 3
 #  @param faces num_faces x 3 long tensor
 #  @param vertex_normals num_points x 3
-def visualize_vertex_normals(vertices, faces, vertex_normals):
+def visualize_vertex_normals(vertices, faces, vertex_normals, filename):
     # augment with normal points
     augmented_vertices = torch.cat((
         vertices, vertices + 0.001,
@@ -152,7 +150,7 @@ def visualize_vertex_normals(vertices, faces, vertex_normals):
     normal_faces = torch.stack((
         torch.arange(vertices.size(0)),
         torch.arange(vertices.size(0)) + vertices.size(0),
-        torch.arange(vertices.size(0)) + 2 * vertices.size(0)
+        torch.arange(vertex_normals.size(0)) + (2 * vertices.size(0))
     ), dim=-1)
     augmented_faces = torch.cat(
         (faces, normal_faces), dim=0
@@ -160,12 +158,34 @@ def visualize_vertex_normals(vertices, faces, vertex_normals):
     mesh = o3d.geometry.TriangleMesh()
     mesh.vertices = o3d.utility.Vector3dVector(augmented_vertices)
     mesh.triangles = o3d.utility.Vector3iVector(augmented_faces)
-    o3d.io.write_triangle_mesh('/tmp/ellipsoid_normal.ply', mesh)
+    o3d.io.write_triangle_mesh(filename, mesh)
 
 def test_normals():
     ellipsoid = Ellipsoid([0, 0, 0])
     vertex_normals = ellipsoid.get_vertex_normals(ellipsoid.coord.unsqueeze(0), 0)
     print('vertex normals:', vertex_normals.size())
+    visualize_vertex_normals(
+        ellipsoid.coord, ellipsoid.faces[0], vertex_normals[0],
+        '/tmp/ellipsoid_normal.ply'
+    )
+
+def test_upsampled_normals():
+    ellipsoid = Ellipsoid([0, 0, 0])
+    coords = ellipsoid.coord.unsqueeze(0)
+    faces = ellipsoid.faces[0].unsqueeze(0)
+    normals = ellipsoid.get_vertex_normals(coords, 0)
+
+    from models.layers.sample_points import PointSampler
+    points_sampler = PointSampler(4000)
+    upsampled_coords, upsampled_normals = points_sampler(coords, faces)
+    upsampled_coords = torch.cat((coords, upsampled_coords), dim=1)
+    upsampled_normals = torch.cat((normals, upsampled_normals), dim=1)
+    print('upsampled vertex normals:', upsampled_normals.size())
+    visualize_vertex_normals(
+        upsampled_coords[0], faces[0], upsampled_normals[0],
+        '/tmp/ellipsoid_normal_upsampled.ply'
+    )
 
 if __name__ == "__main__":
     test_normals()
+    test_upsampled_normals()
