@@ -3,6 +3,8 @@ import pickle
 
 import numpy as np
 import torch
+import torch.nn.functional as F
+
 import trimesh
 from scipy.sparse import coo_matrix
 import itertools
@@ -65,30 +67,105 @@ class Ellipsoid(object):
             self.obj_fmt_faces.append(faces)
             self.faces.append(torch.tensor(faces[:, 1:].astype(np.int) - 1))
 
-        # faces adjacent to each vertex
+        self.update_adjacent_faces()
+
+    ## make uniform tensor by padding zeroes to a 2D list
+    # https://stackoverflow.com/questions/40569220/efficiently-convert-uneven-list-of-lists-to-minimal-containing-array-padded-with
+    @staticmethod
+    def get_padded_tensor(list_obj, dtype=torch.float32, pad_value=0):
+        return torch.tensor(
+            list(itertools.zip_longest(*list_obj, fillvalue=0)),
+            dtype=dtype
+        ).transpose(0, 1).contiguous()
+
+    ## find faces adjacent to each vertex
+    #   Used for calculating vertex normals
+    def update_adjacent_faces(self):
         self.adj_faces = []
         # since the number of faces a vertex can be adjacent to can vary
-        self.adj_faces_count = []
+        self.adj_faces_mask = []
         for i in range(3):
             num_vertices = self.adj_mat[i].size(0)
             adj_faces = [[] for _ in range(num_vertices)]
+
             for face_idx, vertex_indices in enumerate(self.faces[i].unbind(0)):
                 for vertex_idx in vertex_indices:
                     adj_faces[vertex_idx].append(face_idx)
 
-            adj_faces_count = torch.tensor(
-                [len(i) for i in adj_faces], dtype=torch.long
+            adj_faces_mask = [ [1.0 for _ in range(len(i))] for i in adj_faces ]
+
+            self.adj_faces.append(
+                self.get_padded_tensor(adj_faces, dtype=torch.long)
             )
+            self.adj_faces_mask.append(self.get_padded_tensor(adj_faces_mask))
 
-            # make uniform sized by padding zeroes
-            # https://stackoverflow.com/questions/40569220/efficiently-convert-uneven-list-of-lists-to-minimal-containing-array-padded-with
-            adj_faces = torch.tensor(
-                list(itertools.zip_longest(*adj_faces, fillvalue=0)),
-                dtype=torch.long
-            ).transpose(0, 1)
+    ## get vertex normals
+    #  @param coords coordinates of the vertices. batch x num_points x 3 tensor
+    def get_vertex_normals(self, coords, resolution_idx):
+        assert(coords.size(1) == self.adj_faces[resolution_idx].size(0))
+        batch_size = coords.size(0)
+        faces = self.faces[resolution_idx]
+        adj_faces = self.adj_faces[resolution_idx]
+        adj_faces_mask = self.adj_faces_mask[resolution_idx]
+        num_faces = faces.size(0)
+        num_vertices = coords.size(1)
 
-            self.adj_faces.append(adj_faces)
-            self.adj_faces_count.append(adj_faces_count)
+        # vertices of all faces: batch_size x num_faces x 3 x 3
+        # the first 3 is for 3 vertices in a face , the last 3 for 3D coords
+        face_vertices = coords[:, faces.view(-1)] \
+                            .view(batch_size, num_faces, 3, 3)
+        # cross products of all faces: batch_size x num_faces x 3
+        face_cross_products = torch.cross(
+            face_vertices[:, :, 0] - face_vertices[:, :, 1],
+            face_vertices[:, :, 0] - face_vertices[:, :, 2],
+            dim=-1
+        )
+        # cross product of vertices for each adjacent face
+        # batch_size x num_vertices x max_adjacent_faces x 3
+        vertex_cross_products = face_cross_products[:, adj_faces.view(-1)] \
+                                    .view(batch_size, num_vertices, -1, 3)
+        face_mask = adj_faces_mask.unsqueeze(0).unsqueeze(-1) \
+                                  .expand(batch_size, -1, -1, 3)
+        masked_vertex_cross_products = vertex_cross_products * face_mask
+        # summing up adjacent faces' cross products is
+        # equivalent to weighted sum of normal where weight = area of face
+        # https://www.iquilezles.org/www/articles/normals/normals.htm
+        vertex_normals = masked_vertex_cross_products.sum(dim=2)
+        vertex_normals = F.normalize(vertex_normals, dim=-1)
+
+        # for debuggin the vertex normals
+        # visualize_vertex_normals(coords[0], faces, vertex_normals[0])
+
+        return vertex_normals
+
+##
+#  @param vertices num_points x 3
+#  @param faces num_faces x 3 long tensor
+#  @param vertex_normals num_points x 3
+def visualize_vertex_normals(vertices, faces, vertex_normals):
+    # augment with normal points
+    augmented_vertices = torch.cat((
+        vertices, vertices + 0.001,
+        vertices + vertex_normals * 0.01
+    ), dim=0).numpy()
+    # fake faces corresponding to normals
+    normal_faces = torch.stack((
+        torch.arange(vertices.size(0)),
+        torch.arange(vertices.size(0)) + vertices.size(0),
+        torch.arange(vertices.size(0)) + 2 * vertices.size(0)
+    ), dim=-1)
+    augmented_faces = torch.cat(
+        (faces, normal_faces), dim=0
+    ).numpy()
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(augmented_vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(augmented_faces)
+    o3d.io.write_triangle_mesh('/tmp/ellipsoid_normal.ply', mesh)
+
+def test_normals():
+    ellipsoid = Ellipsoid([0, 0, 0])
+    vertex_normals = ellipsoid.get_vertex_normals(ellipsoid.coord.unsqueeze(0), 0)
+    print('vertex normals:', vertex_normals.size())
 
 if __name__ == "__main__":
-    ellipsoid = Ellipsoid([0, 0, 0])
+    test_normals()
