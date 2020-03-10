@@ -197,6 +197,8 @@ def reset_options(options, args, phase='train'):
         options.loss.depth_loss_type = args.depth_loss_type.lower()
     if hasattr(args, "freeze_cv") and args.freeze_cv is not None:
         options.train.freeze_cv = args.freeze_cv
+    if hasattr(args, "normal_loss_weight") and args.normal_loss_weight is not None:
+        options.loss.weights.normal = args.normal_loss_weight
     if hasattr(args, "depth_loss_weight") and args.depth_loss_weight is not None:
         options.loss.weights.depth = args.depth_loss_weight
     if hasattr(args, "rendered_vs_cv_depth_loss_weight") \

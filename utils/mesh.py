@@ -120,6 +120,9 @@ class Ellipsoid(object):
             face_vertices[:, :, 0] - face_vertices[:, :, 2],
             dim=-1
         )
+        # zero out potential NaNs cuz the vertices might be degenerate
+        face_cross_products[face_cross_products != face_cross_products] = 0
+
         # cross product of vertices for each adjacent face
         # batch_size x num_vertices x max_adjacent_faces x 3
         vertex_cross_products = face_cross_products[:, adj_faces.view(-1)] \
@@ -133,6 +136,8 @@ class Ellipsoid(object):
         # https://www.iquilezles.org/www/articles/normals/normals.htm
         vertex_normals = masked_vertex_cross_products.sum(dim=2)
         vertex_normals = F.normalize(vertex_normals, dim=-1)
+        # zero out potential NaNs
+        vertex_normals[vertex_normals != vertex_normals] = 0
 
         return vertex_normals
 

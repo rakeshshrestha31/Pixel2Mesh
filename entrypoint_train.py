@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('--freeze-cv', dest='freeze_cv', action='store_true')
     parser.add_argument('--only-depth-training', dest='only_depth_training', action='store_true')
     parser.add_argument('--all-loss-training', dest='only_depth_training', action='store_false')
+    parser.add_argument('--normal-loss-weight', help='depth loss weight', type=float)
     parser.add_argument('--depth-loss-weight', help='depth loss weight', type=float)
     parser.add_argument('--rendered-vs-cv-depth-loss-weight',
                         help='rendered vs cv predicted depth loss weight',

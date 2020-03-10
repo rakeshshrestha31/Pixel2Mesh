@@ -94,10 +94,21 @@ class P2MLoss(nn.Module):
         return laplace_loss, move_loss
 
     def normal_loss(self, gt_normal, indices, pred_points, adj_list):
+        # Why so sparse? Only uses 1 edge incident on a vertex
+        # to compute normal loss
         edges = F.normalize(pred_points[:, adj_list[:, 0]] - pred_points[:, adj_list[:, 1]], dim=2)
         nearest_normals = torch.stack([t[i] for t, i in zip(gt_normal, indices.long())])
         normals = F.normalize(nearest_normals[:, adj_list[:, 0]], dim=2)
         cosine = torch.abs(torch.sum(edges * normals, 2))
+        return torch.mean(cosine)
+
+    @staticmethod
+    def dense_normal_loss(gt_normals, pred_normals, indices):
+        nearest_gt_normals = torch.stack([
+            t[i] for t, i in zip(gt_normals, indices.long())]
+        )
+        sine = torch.sum(nearest_gt_normals * pred_normals, dim=2)
+        cosine = torch.sqrt(1 - (sine + 1e-10)**2 + 1e-10)
         return torch.mean(cosine)
 
     def image_loss(self, gt_img, pred_img):
@@ -147,32 +158,40 @@ class P2MLoss(nn.Module):
 
     ##
     #  @param pred_coord tensor of coords
-    def upsample_coords(self, coords, faces):
+    def upsample_coords(self, coords, ellipsoid_idx):
         # make sure that all clouds have the same number of points
         self.points_sampler.point_num = self.options.num_chamfer_upsample \
                                       - coords.size(1)
+        coords_normals = \
+                self.ellipsoid.get_vertex_normals(coords, ellipsoid_idx)
+
         if coords.size(1) < self.points_sampler.point_num:
-            upsampled_coords, _ = self.points_sampler(
+            faces = self.ellipsoid.faces[ellipsoid_idx] \
+                        .unsqueeze(0).expand(coords.size(0), -1, -1)
+            upsampled_coords, upsampled_normals = self.points_sampler(
                 coords, faces
             )
             # add original coords too for good measure
             # note: the original coords should be before the upsampled ones
             # otherwise the normal loss will be messed up
             upsampled_coords = torch.cat((coords, upsampled_coords), dim=1)
+            upsampled_normals = torch.cat(
+                (coords_normals, upsampled_normals), dim=1
+            )
         else:
             upsampled_coords = coords
-        return upsampled_coords
+            upsampled_normals = coords_normals
+        return upsampled_coords, upsampled_normals
 
     ##
     #  @param pred_coord list of coords at different resolution
     def get_upsampled_coords(self, pred_coord):
         upsampled_pred_coord = [None for _ in range(len(pred_coord))]
+        upsampled_normals = [None for _ in range(len(pred_coord))]
         for i in range(len(pred_coord)):
-            faces = self.ellipsoid.faces[i] \
-                        .unsqueeze(0) \
-                        .repeat(pred_coord[i].size(0), 1, 1)
-            upsampled_pred_coord[i] = self.upsample_coords(pred_coord[i], faces)
-        return upsampled_pred_coord
+            upsampled_pred_coord[i], upsampled_normals[i] = \
+                    self.upsample_coords(pred_coord[i], i)
+        return upsampled_pred_coord, upsampled_normals
 
     def forward(self, outputs, targets):
         """
@@ -183,6 +202,7 @@ class P2MLoss(nn.Module):
 
         device = device=targets["images"].device
         chamfer_loss, edge_loss, normal_loss, lap_loss, move_loss, depth_loss = 0., 0., 0., 0., 0., 0.
+        dense_normal_loss = 0.
         rendered_vs_cv_depth_loss = torch.tensor(0., device=device)
         rendered_vs_gt_depth_loss = torch.tensor(0., device=device)
         lap_const = [0.2, 1., 1.]
@@ -202,11 +222,15 @@ class P2MLoss(nn.Module):
             image_loss = self.image_loss(gt_images, outputs["reconst"])
 
         if self.upsampled_chamfer_loss:
-            upsampled_pred_coord = self.get_upsampled_coords(pred_coord)
+            upsampled_pred_coord, upsampled_normals = self.get_upsampled_coords(pred_coord)
         else:
             upsampled_pred_coord = pred_coord
+            upsampled_normals = [
+                self.ellipsoid.get_vertex_normals(pred_coord[i], i)
+                for i in range(len(pred_coord))
+            ]
 
-        for i in range(3):
+        for i in range(len(pred_coord)):
             dist1, dist2, idx1, idx2 = self.chamfer_dist(
                 gt_coord, upsampled_pred_coord[i]
             )
@@ -220,6 +244,11 @@ class P2MLoss(nn.Module):
                 gt_normal, idx2,
                 pred_coord[i], self.edges[i]
             )
+            tmp_loss = self.dense_normal_loss(
+                gt_normal, upsampled_normals[i], idx2
+            )
+            if not torch.any(torch.isnan(tmp_loss)):
+                dense_normal_loss += tmp_loss
             edge_loss += self.edge_regularization(
                 pred_coord[i], self.edges[i]
             )
@@ -251,7 +280,7 @@ class P2MLoss(nn.Module):
                    self.options.weights.laplace * lap_loss + \
                    self.options.weights.move * move_loss + \
                    self.options.weights.edge * edge_loss + \
-                   self.options.weights.normal * normal_loss + \
+                   self.options.weights.normal * dense_normal_loss + \
                    self.options.weights.depth * depth_loss + \
                    rendered_vs_gt_depth_loss + \
                    rendered_vs_cv_depth_loss
@@ -266,6 +295,7 @@ class P2MLoss(nn.Module):
             "loss_laplace": lap_loss,
             "loss_move": move_loss,
             "loss_normal": normal_loss,
+            "loss_dense_normal": dense_normal_loss,
             "loss_depth": depth_loss,
             "loss_rendered_vs_cv_depth": \
                 rendered_vs_cv_depth_loss \
