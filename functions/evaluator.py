@@ -95,7 +95,6 @@ class Evaluator(CheckpointRunner):
         # calculate accurate chamfer distance; ground truth points with different lengths;
         # therefore cannot be batched
         batch_size = pred_vertices.size(0)
-        pred_length = pred_vertices.size(1)
         if self.upsampled_chamfer_loss:
             upsampled_pred_vertices = self.p2m_loss.upsample_coords(
                 pred_vertices,
@@ -103,12 +102,13 @@ class Evaluator(CheckpointRunner):
             )
         else:
             upsampled_pred_vertices = pred_vertices
+        pred_length = upsampled_pred_vertices.size(1)
         for i in range(batch_size):
             gt_length = gt_points[i].size(0)
             label = labels[i].cpu().item()
             d1, d2, i1, i2 = self.p2m_loss.chamfer_dist(
-                gt_points[i].unsqueeze(0),
-                upsampled_pred_vertices[i].unsqueeze(0)
+                upsampled_pred_vertices[i].unsqueeze(0),
+                gt_points[i].unsqueeze(0)
             )
             d1, d2 = d1.cpu().numpy(), d2.cpu().numpy()  # convert to millimeter
             self.chamfer_distance[label].update(np.mean(d1) + np.mean(d2))
