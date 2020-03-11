@@ -103,7 +103,7 @@ class P2MLoss(nn.Module):
         return torch.mean(cosine)
 
     @staticmethod
-    def dense_normal_loss(gt_normals, pred_normals, indices):
+    def upsampled_normal_loss(gt_normals, pred_normals, indices):
         nearest_gt_normals = torch.stack([
             t[i] for t, i in zip(gt_normals, indices.long())]
         )
@@ -202,7 +202,6 @@ class P2MLoss(nn.Module):
 
         device = device=targets["images"].device
         chamfer_loss, edge_loss, normal_loss, lap_loss, move_loss, depth_loss = 0., 0., 0., 0., 0., 0.
-        dense_normal_loss = 0.
         rendered_vs_cv_depth_loss = torch.tensor(0., device=device)
         rendered_vs_gt_depth_loss = torch.tensor(0., device=device)
         lap_const = [0.2, 1., 1.]
@@ -240,15 +239,17 @@ class P2MLoss(nn.Module):
                   * torch.mean(dist2) \
             )
             # normal_loss = 0
-            normal_loss += self.normal_loss(
-                gt_normal, idx2,
-                pred_coord[i], self.edges[i]
-            )
-            tmp_loss = self.dense_normal_loss(
-                gt_normal, upsampled_normals[i], idx2
-            )
-            if not torch.any(torch.isnan(tmp_loss)):
-                dense_normal_loss += tmp_loss
+            if self.options.upsampled_normal_loss:
+                tmp_loss = self.upsampled_normal_loss(
+                    gt_normal, upsampled_normals[i], idx2
+                )
+                if not torch.any(torch.isnan(tmp_loss)):
+                    normal_loss += tmp_loss
+            else:
+                normal_loss += self.normal_loss(
+                    gt_normal, idx2,
+                    pred_coord[i], self.edges[i]
+                )
             edge_loss += self.edge_regularization(
                 pred_coord[i], self.edges[i]
             )
@@ -280,7 +281,7 @@ class P2MLoss(nn.Module):
                    self.options.weights.laplace * lap_loss + \
                    self.options.weights.move * move_loss + \
                    self.options.weights.edge * edge_loss + \
-                   self.options.weights.normal * dense_normal_loss + \
+                   self.options.weights.normal * normal_loss + \
                    self.options.weights.depth * depth_loss + \
                    rendered_vs_gt_depth_loss + \
                    rendered_vs_cv_depth_loss
@@ -295,7 +296,6 @@ class P2MLoss(nn.Module):
             "loss_laplace": lap_loss,
             "loss_move": move_loss,
             "loss_normal": normal_loss,
-            "loss_dense_normal": dense_normal_loss,
             "loss_depth": depth_loss,
             "loss_rendered_vs_cv_depth": \
                 rendered_vs_cv_depth_loss \

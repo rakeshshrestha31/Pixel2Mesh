@@ -48,10 +48,15 @@ def parse_args():
                         dest='train_upsampled_chamfer_loss', action='store_true')
     parser.add_argument('--test-upsampled-chamfer-loss',
                         dest='test_upsampled_chamfer_loss', action='store_true')
+    parser.add_argument('--upsampled-normal-loss',
+                        dest='upsampled_normal_loss', action='store_true')
     parser.add_argument('--gconv-skip-connection',
                         help='[none|add|concat]', type=str)
-    parser.set_defaults(only_depth_training=False)
-    parser.set_defaults(freeze_cv=False)
+    parser.set_defaults(
+        only_depth_training=False,
+        freeze_cv=False,
+        upsampled_normal_loss=False
+    )
 
     args = parser.parse_args()
 

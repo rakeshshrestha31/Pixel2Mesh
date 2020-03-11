@@ -85,6 +85,7 @@ options.loss.only_depth_training = False
 options.loss.num_chamfer_upsample = 6466
 # one of ['huber', 'berhu', 'l1', 'l2']
 options.loss.depth_loss_type = 'huber'
+options.loss.upsampled_normal_loss = False
 
 options.train = edict()
 options.train.num_epochs = 200
@@ -211,6 +212,8 @@ def reset_options(options, args, phase='train'):
             and len(args.rendered_vs_gt_depth_loss_weight) == 3:
         options.loss.weights.rendered_vs_gt_depth \
             = args.rendered_vs_gt_depth_loss_weight
+    if hasattr(args, "upsampled_normal_loss") and args.upsampled_normal_loss is not None:
+        options.loss.upsampled_normal_loss = args.upsampled_normal_loss
     if hasattr(args, "lr") and args.lr is not None:
         options.optim.lr = args.lr
     if hasattr(args, "lr_factor") and args.lr_factor is not None:
