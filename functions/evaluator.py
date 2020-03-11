@@ -97,8 +97,7 @@ class Evaluator(CheckpointRunner):
         batch_size = pred_vertices.size(0)
         if self.upsampled_chamfer_loss:
             upsampled_pred_vertices, _ = self.p2m_loss.upsample_coords(
-                pred_vertices,
-                pred_faces.unsqueeze(0).repeat(pred_vertices.size(0), 1, 1)
+                pred_vertices, -1
             )
         else:
             upsampled_pred_vertices = pred_vertices
