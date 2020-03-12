@@ -66,6 +66,8 @@ options.model.align_with_tensorflow = False
 # skip connection type, one of [none, add, concat]
 options.model.gconv_skip_connection = 'none'
 options.model.use_rgb_features = True
+# features fusion, one of [concat, stats, attention]
+options.model.feature_fusion_method = 'concat'
 
 options.loss = edict()
 options.loss.weights = edict()
@@ -229,6 +231,11 @@ def reset_options(options, args, phase='train'):
             and args.gconv_skip_connection is not None \
             and args.gconv_skip_connection.lower() in ['none', 'add', 'concat']:
         options.model.gconv_skip_connection = args.gconv_skip_connection.lower()
+    if hasattr(args, "feature_fusion_method") \
+            and args.feature_fusion_method is not None \
+            and args.feature_fusion_method.lower() \
+                    in ['concat', 'stats', 'attention']:
+        options.model.feature_fusion_method = args.feature_fusion_method.lower()
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
         # options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"

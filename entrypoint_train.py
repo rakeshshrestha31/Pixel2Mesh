@@ -53,6 +53,8 @@ def parse_args():
                         dest='upsampled_normal_loss', action='store_true')
     parser.add_argument('--gconv-skip-connection',
                         help='[none|add|concat]', type=str)
+    parser.add_argument('--feature-fusion-method',
+                        help='[concat|stats|attention]', type=str)
     parser.set_defaults(
         only_depth_training=False,
         freeze_cv=False,
