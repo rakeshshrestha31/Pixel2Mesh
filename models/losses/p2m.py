@@ -201,7 +201,8 @@ class P2MLoss(nn.Module):
         """
 
         device = device=targets["images"].device
-        chamfer_loss, edge_loss, normal_loss, lap_loss, move_loss, depth_loss = 0., 0., 0., 0., 0., 0.
+        chamfer_loss, edge_loss, lap_loss, move_loss, depth_loss = 0., 0., 0., 0., 0.
+        normal_loss = torch.tensor(0., device=device)
         rendered_vs_cv_depth_loss = torch.tensor(0., device=device)
         rendered_vs_gt_depth_loss = torch.tensor(0., device=device)
         lap_const = [0.2, 1., 1.]
