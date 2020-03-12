@@ -297,9 +297,7 @@ class MVSNet(nn.Module):
         prob_volume = F.softmax(cost_reg, dim=1)
         depth = depth_regression(prob_volume, depth_values=depth_values)
         # add cost aggregated feature
-        features[0] = []
-        features[0] = cost_agg_feature
-        return {"features": features, "depth": depth}
+        return {"features": cost_agg_feature, "depth": depth}
 
 class VGG16P2M(nn.Module):
 

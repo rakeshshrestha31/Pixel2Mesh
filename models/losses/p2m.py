@@ -289,6 +289,9 @@ class P2MLoss(nn.Module):
         # loss = depth_loss
 
         loss = loss * self.options.weights.constant
+        sum_rendered_vs_gt_depth_weights = np.sum(
+            self.options.weights.rendered_vs_gt_depth
+        ) if np.any(self.options.weights.rendered_vs_gt_depth) else 1.0
         loss_summary = {
             "loss": loss,
             "loss_chamfer": chamfer_loss / np.sum(self.options.weights.chamfer),
@@ -301,8 +304,7 @@ class P2MLoss(nn.Module):
                 rendered_vs_cv_depth_loss \
                     / np.sum(self.options.weights.rendered_vs_cv_depth),
             "loss_rendered_vs_gt_depth": \
-                rendered_vs_gt_depth_loss \
-                    / np.sum(self.options.weights.rendered_vs_gt_depth),
+                rendered_vs_gt_depth_loss / sum_rendered_vs_gt_depth_weights,
         }
         nan_losses = {
             key: value.item() for key, value in loss_summary.items()

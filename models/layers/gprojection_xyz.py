@@ -72,10 +72,7 @@ class GProjection(nn.Module):
         z = torch.clamp(z, min=-1, max=1)
         return  z
 
-    ## Note: batch size is expected to be 1.
-    #  Flatten the inputs if they are multi-batched
     def forward(self, resolution, img_features, inputs, depth_values):
-        assert(inputs.size(0) == 1)
         half_resolution = (resolution - 1) / 2
         camera_c_offset = np.array(self.camera_c) - half_resolution
         # map to [-1, 1]
@@ -84,8 +81,8 @@ class GProjection(nn.Module):
         w = -self.camera_f[0] * (positions[:, :, 0] / self.bound_val(positions[:, :, 2])) + camera_c_offset[0]
         h = self.camera_f[1] * (positions[:, :, 1] / self.bound_val(positions[:, :, 2])) + camera_c_offset[1]
 
-        d_max = depth_values[0, -1]
-        d_min = depth_values[0, 0]
+        d_max = depth_values[:, -1].unsqueeze(-1)
+        d_min = depth_values[:, 0].unsqueeze(-1)
         d_normed = self.normalize_depth(-positions[:, :, -1], d_max, d_min)
 
 
@@ -104,7 +101,7 @@ class GProjection(nn.Module):
             w = torch.clamp(w, min=-1, max=1)
             h = torch.clamp(h, min=-1, max=1)
 
-        feats = [inputs]
+        feats = []
         for img_feature in img_features:
             feats.append(self.project(resolution, img_feature, torch.stack([w, h, d_normed], dim=-1)))
 

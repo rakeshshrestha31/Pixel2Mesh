@@ -65,6 +65,7 @@ options.model.z_threshold = 0
 options.model.align_with_tensorflow = False
 # skip connection type, one of [none, add, concat]
 options.model.gconv_skip_connection = 'none'
+options.model.use_rgb_features = True
 
 options.loss = edict()
 options.loss.weights = edict()
@@ -78,9 +79,9 @@ options.loss.weights.chamfer_opposite = 1.
 options.loss.weights.reconst = 0.
 options.loss.weights.depth = 1e-4
 # rendered loss depth compared with costvolume predicted depth
-options.loss.weights.rendered_vs_cv_depth = [0.1, 0.1, 0.1]
+options.loss.weights.rendered_vs_cv_depth = [0.001, 0.001, 0.001]
 # rendered loss depth compared with ground truth  depth
-options.loss.weights.rendered_vs_gt_depth = [0.1, 0.1, 0.1]
+options.loss.weights.rendered_vs_gt_depth = [0., 0., 0.]
 options.loss.only_depth_training = False
 options.loss.num_chamfer_upsample = 6466
 # one of ['huber', 'berhu', 'l1', 'l2']

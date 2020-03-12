@@ -28,12 +28,22 @@ class P2MModel(nn.Module):
         self.init_pts = nn.Parameter(ellipsoid.coord, requires_grad=False)
         self.gconv_activation = options.gconv_activation
         self.gconv_skip_connection = options.gconv_skip_connection.lower()
+        self.options = options
 
         self.mvsnet = MVSNet(freeze_cv=self.freeze_cv,
                              checkpoint=mvsnet_checkpoint)
-        self.vgg = VGG16P2M(n_classes_input=2, pretrained=False)
-        # x3 for three views
-        self.features_dim = (self.vgg.features_dim  + self.coord_dim) * 3
+        if options.use_rgb_features:
+            self.rgb_vgg = VGG16P2M(n_classes_input=3, pretrained=False)
+        self.depth_vgg = VGG16P2M(n_classes_input=2, pretrained=False)
+        # features: RGB-features + Depth features + Depth
+        #               + cost-volume features local coordinates
+        # multiply by 3 for 3 views
+        self.features_dim = ( \
+            (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
+            + self.depth_vgg.features_dim
+            + self.mvsnet.features_dim \
+            + 1 + 3 \
+        ) * 3
         print("===> number of P2MModel features:", self.features_dim)
 
         self.gcns = nn.ModuleList([
@@ -54,7 +64,11 @@ class P2MModel(nn.Module):
         #     self.projection = GProjection
         # else:
         #     self.projection = GProjection
-        self.projection = GProjection(
+        self.projection_2d = GProjection(
+            mesh_pos, camera_f, camera_c, bound=options.z_threshold,
+            tensorflow_compatible=options.align_with_tensorflow
+        )
+        self.projection_3d = GProjectionXYZ(
             mesh_pos, camera_f, camera_c, bound=options.z_threshold,
             tensorflow_compatible=options.align_with_tensorflow
         )
@@ -126,41 +140,109 @@ class P2MModel(nn.Module):
     def make_points_unhomogeneous(pts):
         return pts[:, :, :3]
 
+    @staticmethod
+    # convenience function for projecting features of a view
+    def project_view_features(features, points, view_idx,
+                              img_shape, projection_functor):
+        view_features = [ i[:, view_idx].contiguous() for i in features ]
+        proj_features = projection_functor(img_shape, view_features, points)
+        return proj_features
+
     ##
     #  @param img_feats list with elements batch x view x channel x height x width
+    #  @param depth_feats list with elements batch x view x channel x height x width
+    #  @param costvolume_feats list with elements
+    #               batch x view x channel x z x height x width
     #  @param pts batch x num_points x 3
     #  @return view pooled tensor of size batch x total_channels x height x width
-    def cross_view_feature_pooling(self, img_shape, img_feats, pts, proj_mat):
+    def cross_view_feature_pooling(
+            self, img_shape, img_feats, depth_feats,
+            costvolume_feats, depth, pts, proj_mat, depth_values
+    ):
         T_ref_world = proj_mat[:, 0, 0]
         T_world_ref = torch.inverse(T_ref_world)
         num_views = img_feats[0].size(1)
         transformed_features = []
 
+        projection_3d = functools.partial(self.projection_3d,
+                                          depth_values=depth_values)
         for view_idx in range(num_views):
             T_view_world = proj_mat[:, view_idx, 0]
             T_view_ref = torch.bmm(T_view_world, T_world_ref)
             pts_view = self.transform_points(pts, T_view_ref)
-            view_features = [ i[:, view_idx].contiguous() for i in img_feats ]
-            x = self.projection(img_shape, view_features, pts_view)
-            transformed_features.append(x)
+            # bound functions for easy features projection
+            project_2d_features = functools.partial(
+                self.project_view_features, points=pts_view, view_idx=view_idx,
+                img_shape=img_shape, projection_functor=self.projection_2d
+            )
+            project_3d_features = functools.partial(
+                self.project_view_features, points=pts_view, view_idx=view_idx,
+                img_shape=img_shape, projection_functor=projection_3d
+            )
+
+            proj_feats = [pts_view]
+            # features from RGB image
+            if self.options.use_rgb_features:
+                x_img_feats = project_2d_features(features=img_feats)
+                proj_feats.append(x_img_feats)
+
+            # features from depths
+            x_depth_feats = project_2d_features(features=depth_feats)
+            proj_feats.append(x_depth_feats)
+
+            # features from costvolume
+            x_costvolume_feats = project_3d_features(features=costvolume_feats)
+            proj_feats.append(x_costvolume_feats)
+
+            # features from predicted depth
+            x_depth = project_2d_features(features=[depth.unsqueeze(2)])
+            proj_feats.append(x_depth)
+
+            transformed_features.append(torch.cat(proj_feats, dim=-1))
         return torch.cat(transformed_features, dim=-1)
 
-    ## join features, each input is a list of features of same lengths
-    #  with corresponding elements being tensors of same dimensions
-    #  feature dimensions batch x channel x height x width
-    #  @return list with elements batch x (channel * n) x height x width
-    @staticmethod
-    def join_features(*features):
-        zipped_features = zip(*features)
-        return [torch.cat(i, dim=1) for i in zipped_features]
+    def get_rgb_features(self, img):
+        if self.options.use_rgb_features:
+            batch_size = img.size(0)
+            vgg_input = self.flatten_batch_view(img)
+            vgg_feats = self.rgb_vgg(vgg_input)
 
-    ## just a wrapper for getting depth and its features
-    def get_rendered_depth_features(self, pts, faces, proj_mat, img_shape):
-        rendered_depth = self.mesh_to_depth(pts, faces, proj_mat, img_shape)
-        rendered_depth_feats = self.vgg(
-            self.flatten_batch_view(rendered_depth).unsqueeze(1)
-        )
-        return rendered_depth, rendered_depth_feats
+            img_feats = [
+                self.unflatten_batch_view(i, batch_size)
+                for i in vgg_feats
+            ]
+            return img_feats
+        else:
+            return []
+
+    ##
+    #  @param pred_depth  batch x view x h x w
+    #  @param rendered_depth batch x view x h x w
+    def get_depth_features(self, pred_depth, rendered_depth):
+        batch_size = pred_depth.size(0)
+        # unsqeeze 1 to simulate channels (single channel)
+        pred_depth = P2MModel.flatten_batch_view(pred_depth).unsqueeze(1)
+        rendered_depth = self.flatten_batch_view(rendered_depth).unsqueeze(1)
+        joint_input = torch.cat((pred_depth, rendered_depth), dim=1)
+        joint_features = self.depth_vgg(joint_input)
+        return [
+            self.unflatten_batch_view(i, batch_size) for i in joint_features
+        ]
+
+    ##
+    #  @param depth_features 2D list of size num_views x num_features
+    #  @return 1D list of size num_features
+    #           each item batch x view x channel x w x h
+    @staticmethod
+    def group_costvolume_features(costvolume_features):
+        # list of size num_features x num_views
+        costvolume_features = [
+            [costvolume_features[i][j] for i in range(len(costvolume_features))]
+            for j in range(len(costvolume_features[0]))
+        ]
+        costvolume_features = [torch.stack(i, dim=1) for i in costvolume_features]
+        # reverse to make similar to image features (lower channel first)
+        return costvolume_features
 
     def forward(self, input_batch):
         img = input_batch["images"]
@@ -168,7 +250,7 @@ class P2MModel(nn.Module):
         depth_values = input_batch["depth_values"]
         masks = input_batch["masks"]
         batch_size = img.size(0)
-        img_shape = self.projection.image_feature_shape(img[0])
+        img_shape = self.projection_2d.image_feature_shape(img[0])
 
         rendered_depths_before_deform = [None for _ in range(3)]
         rendered_depths = [None for _ in range(3)]
@@ -180,51 +262,31 @@ class P2MModel(nn.Module):
             self.unflatten_batch_view, batch_size=batch_size
         )
 
-        # just a local convenience function
-        def join_features(img_feats, depth_feats):
-            nonlocal unflatten_batch_view
-            joint_features = P2MModel.join_features(img_feats, depth_feats)
-            return [unflatten_batch_view(i) for i in joint_features]
-
-        ##
-        #  @param input1 batch x view x h x w
-        #  @param input2 batch x view x h x w
-        def get_joint_features(input1, input2, model):
-            # unsqeeze 1 to simulate channels (single channel)
-            input1 = P2MModel.flatten_batch_view(input1).unsqueeze(1)
-            input2 = P2MModel.flatten_batch_view(input2).unsqueeze(1)
-            joint_input = torch.cat((input1, input2), dim=1)
-            joint_features = self.vgg(joint_input)
-            return [unflatten_batch_view(i) for i in joint_features]
-
         out_mvsnet = self.mvsnet(input_batch)
+        costvolume_features = out_mvsnet["features"]
+        costvolume_features = \
+                self.group_costvolume_features(costvolume_features)
         masked_pred_depth = out_mvsnet["depths"] * masks
         masked_pred_depth = F.interpolate(
             masked_pred_depth, [config.IMG_SIZE, config.IMG_SIZE], mode='nearest'
         )
 
-        # unsqeeze 1 to simulate channels (single channel)
-        # vgg_input = self.flatten_batch_view(
-        #     out_mvsnet["depths"] * masks
-        # ).unsqueeze(1)
-        # vgg_input = F.interpolate(
-        #     vgg_input, size=[config.IMG_SIZE, config.IMG_SIZE], mode='nearest'
-        # )
-        # img_feats = self.vgg(vgg_input)
+        rgb_features = self.get_rgb_features(img)
 
         init_pts = self.init_pts.data.unsqueeze(0).expand(batch_size, -1, -1)
 
         rendered_depths_before_deform[0] = self.mesh_to_depth(
             init_pts, batched_faces[0], proj_mat, img_shape
         )
-        joint_features = get_joint_features(
-            masked_pred_depth, rendered_depths_before_deform[0], self.vgg
+        depth_features = self.get_depth_features(
+            masked_pred_depth, rendered_depths_before_deform[0]
         )
 
         # GCN Block 1
         # x1 shape is torch.Size([16, 156, 3]), x_h
         x = self.cross_view_feature_pooling(
-            img_shape, joint_features, init_pts, proj_mat
+            img_shape, rgb_features, depth_features, costvolume_features,
+            masked_pred_depth, init_pts, proj_mat, depth_values
         )
         x1, x_hidden = self.gcns[0](x)
 
@@ -239,13 +301,14 @@ class P2MModel(nn.Module):
         rendered_depths_before_deform[1] = self.mesh_to_depth(
             x1, batched_faces[0], proj_mat, img_shape
         )
-        joint_features = get_joint_features(
-            masked_pred_depth, rendered_depths_before_deform[1], self.vgg
+        depth_features = self.get_depth_features(
+            masked_pred_depth, rendered_depths_before_deform[1]
         )
 
         # GCN Block 2
         x = self.cross_view_feature_pooling(
-            img_shape, joint_features, x1, proj_mat
+            img_shape, rgb_features, depth_features, costvolume_features,
+            masked_pred_depth, x1, proj_mat, depth_values
         )
         x = self.unpooling[0](torch.cat([x, x_hidden], 2))
 
@@ -262,14 +325,15 @@ class P2MModel(nn.Module):
         rendered_depths_before_deform[2] = self.mesh_to_depth(
             x2, batched_faces[1], proj_mat, img_shape
         )
-        joint_features = get_joint_features(
-            masked_pred_depth, rendered_depths_before_deform[2], self.vgg
+        depth_features = self.get_depth_features(
+            masked_pred_depth, rendered_depths_before_deform[2]
         )
 
         # GCN Block 3
         # x2 shape is torch.Size([16, 618, 3])
         x = self.cross_view_feature_pooling(
-            img_shape, joint_features, x2, proj_mat
+            img_shape, rgb_features, depth_features, costvolume_features,
+            masked_pred_depth, x2, proj_mat, depth_values
         )
         x = self.unpooling[1](torch.cat([x, x_hidden], 2))
 
