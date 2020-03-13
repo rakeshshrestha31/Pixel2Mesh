@@ -9,6 +9,7 @@ from models.layers.gconv import GConv
 from models.layers.gpooling import GUnpooling
 from models.layers.gprojection import GProjection
 from models.layers.gprojection_xyz import GProjection as GProjectionXYZ
+from models.layers.attention_feature_pooling import AttentionFeaturePooling
 import config
 
 import neural_renderer as nr
@@ -37,12 +38,27 @@ class P2MModel(nn.Module):
         self.depth_vgg = VGG16P2M(n_classes_input=2, pretrained=False)
         # features: RGB-features + Depth features + cost-volume features
         #               + Depth + local point coordinates
-        self.features_dim = ( \
-            (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
-            + self.depth_vgg.features_dim
-            + self.mvsnet.features_dim \
-            + 1 + 3\
-        ) * 3
+        if self.options.feature_fusion_method == 'attention':
+            pre_fusion_features_dim = \
+                (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
+                + self.depth_vgg.features_dim \
+                + self.mvsnet.features_dim + 1
+            post_fusion_features_dim = pre_fusion_features_dim
+            # TODO: the num_heads is too high. But it can't be lowered
+            # since it needs to be a factor of the features dim
+            self.attention_model = AttentionFeaturePooling(
+                pre_fusion_features_dim, post_fusion_features_dim,
+                num_heads=43, max_views=3
+            )
+            # local point coordinates for all views
+            self.features_dim = post_fusion_features_dim + (3 * 3)
+        else:
+            self.features_dim = ( \
+                (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
+                + self.depth_vgg.features_dim
+                + self.mvsnet.features_dim \
+                + 1 + 3 \
+            ) * 3
         print("===> number of P2MModel features:", self.features_dim)
 
         self.gcns = nn.ModuleList([
@@ -221,12 +237,27 @@ class P2MModel(nn.Module):
             features_stats = self.get_features_stats(features)
             return torch.cat(coords + [features_stats], dim=-1)
         elif self.options.feature_fusion_method == 'attention':
-            print('method %r not implemented' \
-                    % self.options.feature_fusion_method)
-            exit(0)
+            features_attn = self.attention_fusion(features)
+            return torch.cat(coords + [features_attn], dim=-1)
         else:
             print('unknown method %r' % self.options.feature_fusion_method)
             exit(0)
+
+    def attention_fusion(self, features):
+        num_views = len(features)
+        batch_size, num_points, num_features = features[0].size()
+
+        # the batch number of points should be flattened
+        # Each point acts independently regarless of the batch it belongs to
+        # TODO: verify if this is the right approach
+        flattened_features = torch.stack(features, dim=0) \
+                                  .view(num_views, -1, num_features)
+        features_attn, weights_attn = self.attention_model(flattened_features)
+        features_attn = features_attn.squeeze(0) \
+                                     .view(batch_size, num_points, num_features)
+        weights_attn = weights_attn.squeeze(1) \
+                                   .view(batch_size, num_points, num_views)
+        return features_attn
 
     #  @param features list of features of size
     #           batch x num_points x num_channels for each view
