@@ -66,8 +66,13 @@ options.model.align_with_tensorflow = False
 # skip connection type, one of [none, add, concat]
 options.model.gconv_skip_connection = 'none'
 options.model.use_rgb_features = True
+options.model.use_costvolume_features = True
+options.model.use_contrastive_depth = True
+options.model.use_predicted_depth_as_feature = True
 # features fusion, one of [concat, stats, attention]
 options.model.feature_fusion_method = 'concat'
+options.model.num_attention_heads = 1
+options.model.num_attention_features = -1
 
 options.loss = edict()
 options.loss.weights = edict()
@@ -231,11 +236,29 @@ def reset_options(options, args, phase='train'):
             and args.gconv_skip_connection is not None \
             and args.gconv_skip_connection.lower() in ['none', 'add', 'concat']:
         options.model.gconv_skip_connection = args.gconv_skip_connection.lower()
+    if hasattr(args, "use_rgb_features") and args.use_rgb_features is not None:
+        options.model.use_rgb_features = args.use_rgb_features
+    if hasattr(args, "use_costvolume_features") \
+            and args.use_costvolume_features is not None:
+        options.model.use_costvolume_features = args.use_costvolume_features
+    if hasattr(args, "use_contrastive_depth") \
+            and args.use_contrastive_depth is not None:
+        options.model.use_contrastive_depth = args.use_contrastive_depth
+    if hasattr(args, "use_predicted_depth_as_feature") \
+            and args.use_predicted_depth_as_feature is not None:
+        options.model.use_predicted_depth_as_feature \
+                = args.use_predicted_depth_as_feature
     if hasattr(args, "feature_fusion_method") \
             and args.feature_fusion_method is not None \
             and args.feature_fusion_method.lower() \
                     in ['concat', 'stats', 'attention']:
         options.model.feature_fusion_method = args.feature_fusion_method.lower()
+    if hasattr(args, "num_attention_heads") \
+            and args.num_attention_heads:
+        options.model.num_attention_heads = args.num_attention_heads
+    if hasattr(args, "num_attention_features") \
+            and args.num_attention_features:
+        options.model.num_attention_features = args.num_attention_features
     if hasattr(args, "dataset") and args.dataset:
         options.dataset.name = args.dataset
         # options.dataset.train_list = "./datasets/data/shapenet/meta/train_dtu_scan2.txt"

@@ -53,16 +53,52 @@ def parse_args():
                         dest='upsampled_normal_loss', action='store_true')
     parser.add_argument('--gconv-skip-connection',
                         help='[none|add|concat]', type=str)
+
+    parser.add_argument('--use-rgb-features', dest='use_rgb_features',
+                        action='store_true')
+    parser.add_argument('--dont-use-rgb-features', dest='use_rgb_features',
+                        action='store_false')
+
+    parser.add_argument('--use-costvolume-features', dest='use_costvolume_features',
+                        action='store_true')
+    parser.add_argument('--dont-use-costvolume-features', dest='use_costvolume_features',
+                        action='store_false')
+
+    parser.add_argument('--use-contrastive-depth', dest='use_contrastive_depth',
+                        action='store_true')
+    parser.add_argument('--dont-use-contrastive-depth', dest='use_contrastive_depth',
+                        action='store_false')
+
+    parser.add_argument('--use-predicted-depth-as-feature',
+                        dest='use_predicted_depth_as_feature',
+                        action='store_true')
+    parser.add_argument('--dont-use-predicted-depth-as-feature',
+                        dest='use_predicted_depth_as_feature',
+                        action='store_false')
+
     parser.add_argument('--feature-fusion-method',
                         help='[concat|stats|attention]', type=str)
+    parser.add_argument('--num-attention-heads',
+                        help='number of attention heads', type=int)
+    parser.add_argument('--num-attention-features',
+                        help='number of attention features '
+                             '< 0 indicates no change in features number '
+                             'from input',
+                        type=int)
+
+    # set the default booleans to None otherwise it will be False and
+    # overwrite the default options
     parser.set_defaults(
-        only_depth_training=False,
-        freeze_cv=False,
-        upsampled_normal_loss=False
+        only_depth_training=None,
+        freeze_cv=None,
+        upsampled_normal_loss=None,
+        use_rgb_features=None,
+        use_costvolume_features=None,
+        use_contrastive_depth=None,
+        use_predicted_depth_as_feature=None
     )
 
     args = parser.parse_args()
-
     return args
 
 

@@ -35,29 +35,41 @@ class P2MModel(nn.Module):
                              checkpoint=mvsnet_checkpoint)
         if options.use_rgb_features:
             self.rgb_vgg = VGG16P2M(n_classes_input=3, pretrained=False)
-        self.depth_vgg = VGG16P2M(n_classes_input=2, pretrained=False)
+
+        depth_channels = 2 if options.use_contrastive_depth else 1
+        self.depth_vgg = VGG16P2M(n_classes_input=depth_channels,
+                                  pretrained=False)
         # features: RGB-features + Depth features + cost-volume features
         #               + Depth + local point coordinates
         if self.options.feature_fusion_method == 'attention':
             pre_fusion_features_dim = \
                 (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
                 + self.depth_vgg.features_dim \
-                + self.mvsnet.features_dim + 1
-            post_fusion_features_dim = pre_fusion_features_dim
-            # TODO: the num_heads is too high. But it can't be lowered
-            # since it needs to be a factor of the features dim
-            self.attention_model = AttentionFeaturePooling(
-                pre_fusion_features_dim, post_fusion_features_dim,
-                num_heads=43, max_views=3
-            )
+                + (self.mvsnet.features_dim \
+                    if options.use_costvolume_features else 0) \
+                + (1 if options.use_predicted_depth_as_feature else 0)
+            if options.num_attention_features <= 0:
+                post_fusion_features_dim = pre_fusion_features_dim
+            else:
+                post_fusion_features_dim =  options.num_attention_features
+
             # local point coordinates for all views
             self.features_dim = post_fusion_features_dim + (3 * 3)
+            print("==> number of features before/after attention:",
+                  pre_fusion_features_dim, post_fusion_features_dim)
+
+            self.attention_model = AttentionFeaturePooling(
+                pre_fusion_features_dim, post_fusion_features_dim,
+                num_heads=options.num_attention_heads, max_views=3
+            )
         else:
             self.features_dim = ( \
                 (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
                 + self.depth_vgg.features_dim
-                + self.mvsnet.features_dim \
-                + 1 + 3 \
+                + (self.mvsnet.features_dim \
+                    if options.use_costvolume_features else 0) \
+                + (1 if options.use_predicted_depth_as_feature else 0) \
+                + 3 \
             ) * 3
         print("===> number of P2MModel features:", self.features_dim)
 
@@ -180,7 +192,7 @@ class P2MModel(nn.Module):
     ):
         T_ref_world = proj_mat[:, 0, 0]
         T_world_ref = torch.inverse(T_ref_world)
-        num_views = img_feats[0].size(1)
+        num_views = depth_feats[0].size(1)
         transformed_features = []
 
         projection_3d = functools.partial(self.projection_3d,
@@ -212,12 +224,15 @@ class P2MModel(nn.Module):
             proj_feats.append(x_depth_feats)
 
             # features from costvolume
-            x_costvolume_feats = project_3d_features(features=costvolume_feats)
-            proj_feats.append(x_costvolume_feats)
+            if self.options.use_costvolume_features:
+                x_costvolume_feats = \
+                        project_3d_features(features=costvolume_feats)
+                proj_feats.append(x_costvolume_feats)
 
             # features from predicted depth
-            x_depth = project_2d_features(features=[depth.unsqueeze(2)])
-            proj_feats.append(x_depth)
+            if self.options.use_predicted_depth_as_feature:
+                x_depth = project_2d_features(features=[depth.unsqueeze(2)])
+                proj_feats.append(x_depth)
 
             transformed_features.append(torch.cat(proj_feats, dim=-1))
         return self.fuse_features(pts_coordinates, transformed_features)
@@ -254,7 +269,7 @@ class P2MModel(nn.Module):
                                   .view(num_views, -1, num_features)
         features_attn, weights_attn = self.attention_model(flattened_features)
         features_attn = features_attn.squeeze(0) \
-                                     .view(batch_size, num_points, num_features)
+                                     .view(batch_size, num_points, -1)
         weights_attn = weights_attn.squeeze(1) \
                                    .view(batch_size, num_points, num_views)
         return features_attn
@@ -294,7 +309,10 @@ class P2MModel(nn.Module):
         # unsqeeze 1 to simulate channels (single channel)
         pred_depth = P2MModel.flatten_batch_view(pred_depth).unsqueeze(1)
         rendered_depth = self.flatten_batch_view(rendered_depth).unsqueeze(1)
-        joint_input = torch.cat((pred_depth, rendered_depth), dim=1)
+        if self.options.use_contrastive_depth:
+            joint_input = torch.cat((pred_depth, rendered_depth), dim=1)
+        else:
+            joint_input = pred_depth
         joint_features = self.depth_vgg(joint_input)
         return [
             self.unflatten_batch_view(i, batch_size) for i in joint_features
