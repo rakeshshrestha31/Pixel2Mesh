@@ -71,6 +71,7 @@ options.model.use_contrastive_depth = True
 options.model.use_predicted_depth_as_feature = True
 options.model.use_backprojected_depth_as_feature = False
 options.model.use_multiview_coords_as_feature = False
+options.model.use_stats_query_attention = False
 # features fusion, one of [concat, stats, attention]
 options.model.feature_fusion_method = 'concat'
 options.model.num_attention_heads = 1
@@ -258,6 +259,10 @@ def reset_options(options, args, phase='train'):
             and args.use_multiview_coords_as_feature is not None:
         options.model.use_multiview_coords_as_feature \
                 = args.use_multiview_coords_as_feature
+    if hasattr(args, "use_stats_query_attention") \
+            and args.use_stats_query_attention is not None:
+        options.model.use_stats_query_attention \
+                = args.use_stats_query_attention
 
     if hasattr(args, "feature_fusion_method") \
             and args.feature_fusion_method is not None \

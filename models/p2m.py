@@ -62,13 +62,17 @@ class P2MModel(nn.Module):
             else:
                 post_fusion_features_dim =  options.num_attention_features
 
-            self.features_dim = post_fusion_features_dim + coords_features_dim
+            self.features_dim = \
+                (post_fusion_features_dim \
+                    * (3 if options.use_stats_query_attention else 1) \
+                ) + coords_features_dim
             print("==> number of features before/after attention:",
                   pre_fusion_features_dim, post_fusion_features_dim)
 
             self.attention_model = AttentionFeaturePooling(
                 pre_fusion_features_dim, post_fusion_features_dim,
-                num_heads=options.num_attention_heads, max_views=3
+                num_heads=options.num_attention_heads, max_views=3,
+                use_stats_query=options.use_stats_query_attention
             )
         else:
             # add local point coordinates for all views
@@ -304,7 +308,7 @@ class P2MModel(nn.Module):
         features_attn = features_attn.squeeze(0) \
                                      .view(batch_size, num_points, -1)
         weights_attn = weights_attn.squeeze(1) \
-                                   .view(batch_size, num_points, num_views)
+                                   .view(batch_size, num_points, num_views, -1)
         return features_attn
 
     #  @param features list of features of size

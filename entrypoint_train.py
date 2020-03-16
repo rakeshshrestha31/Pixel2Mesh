@@ -90,6 +90,17 @@ def parse_args():
                         dest='use_multiview_coords_as_feature',
                         action='store_false')
 
+    parser.add_argument('--use-stats-query-attention',
+                        dest='use_stats_query_attention',
+                        help='use statistical features '
+                             'for attention query vector',
+                        action='store_true')
+    parser.add_argument('--dont-use-stats-query-attention',
+                        dest='use_stats_query_attention',
+                        help='don\'t use statistical features '
+                             'for attention query vector',
+                        action='store_false')
+
     parser.add_argument('--feature-fusion-method',
                         help='[concat|stats|attention]', type=str)
     parser.add_argument('--num-attention-heads',
@@ -111,7 +122,8 @@ def parse_args():
         use_contrastive_depth=None,
         use_predicted_depth_as_feature=None,
         use_backprojected_depth_as_feature=None,
-        use_multiview_coords_as_feature=None
+        use_multiview_coords_as_feature=None,
+        use_stats_query_attention=None
     )
 
     args = parser.parse_args()

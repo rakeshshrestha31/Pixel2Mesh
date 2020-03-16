@@ -7,9 +7,12 @@ from models.layers.multihead_attention import MultiheadAttention
 
 class AttentionFeaturePooling(nn.Module):
     def __init__(self, input_features_dim, output_features_dim,
-                 num_heads, max_views=3, bias=True):
+                 num_heads, use_stats_query,
+                 max_views=3, bias=True):
         super(AttentionFeaturePooling, self).__init__()
         self.max_views = max_views
+        self.use_stats_query = use_stats_query
+
         self.attention = MultiheadAttention(
             output_features_dim, num_heads, bias=bias
         )
@@ -41,11 +44,18 @@ class AttentionFeaturePooling(nn.Module):
         flattened_features = features.view(-1, features.size(-1))
 
         # query
-        query = self.query_linear(flattened_features)
+        if self.use_stats_query:
+            flattened_query_input = self.get_features_stats(features) \
+                                        .view(-1, features.size(-1))
+        else:
+            flattened_query_input = flattened_features
+
+        query = self.query_linear(flattened_query_input)
         query = query.view(num_views, batch_size, -1)
-        # the first dim of query should be target sequence size (here 1)
-        # taking mean is non-standard (TODO: find a better way)
-        query = query.mean(dim=0, keepdim=True)
+        if not self.use_stats_query:
+            # the first dim of query should be target sequence size (here 1)
+            # taking mean is non-standard (TODO: find a better way)
+            query = query.mean(dim=0, keepdim=True)
 
         # key/value
         key = self.key_linear(flattened_features)
@@ -53,4 +63,16 @@ class AttentionFeaturePooling(nn.Module):
 
         attn_output, attn_weights = self.attention(query, key, value)
         return attn_output, attn_weights
+
+    ##
+    #  @param features tensor of dimensions views x batch x features
+    @staticmethod
+    def get_features_stats(features):
+        max_features = torch.max(features, dim=0)[0]
+        mean_features = torch.mean(features, dim=0)
+        var_features = torch.var(features, dim=0, unbiased=False)
+        # calculating std using torch methods give NaN gradients
+        # var will have different unit that mean/max, hence std desired
+        std_features = torch.sqrt(var_features + 1e-8)
+        return torch.stack((max_features, mean_features, std_features), dim=0)
 
