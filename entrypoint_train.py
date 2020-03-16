@@ -76,6 +76,13 @@ def parse_args():
                         dest='use_predicted_depth_as_feature',
                         action='store_false')
 
+    parser.add_argument('--use-backprojected-depth-as-feature',
+                        dest='use_backprojected_depth_as_feature',
+                        action='store_true')
+    parser.add_argument('--dont-use-backprojected-depth-as-feature',
+                        dest='use_backprojected_depth_as_feature',
+                        action='store_false')
+
     parser.add_argument('--feature-fusion-method',
                         help='[concat|stats|attention]', type=str)
     parser.add_argument('--num-attention-heads',
@@ -95,7 +102,8 @@ def parse_args():
         use_rgb_features=None,
         use_costvolume_features=None,
         use_contrastive_depth=None,
-        use_predicted_depth_as_feature=None
+        use_predicted_depth_as_feature=None,
+        use_backprojected_depth_as_feature=None
     )
 
     args = parser.parse_args()

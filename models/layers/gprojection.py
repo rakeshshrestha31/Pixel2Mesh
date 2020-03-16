@@ -66,7 +66,7 @@ class GProjection(nn.Module):
         output = Q11 + Q21 + Q12 + Q22
         return output
 
-    def forward(self, resolution, img_features, inputs):
+    def forward(self, resolution, img_features, inputs, mode='bilinear'):
         half_resolution = (resolution - 1) / 2
         camera_c_offset = np.array(self.camera_c) - half_resolution
         # map to [-1, 1]
@@ -92,13 +92,15 @@ class GProjection(nn.Module):
 
         feats = []
         for img_feature in img_features:
-            feats.append(self.project(resolution, img_feature, torch.stack([w, h], dim=-1)))
+            feats.append(self.project(
+                resolution, img_feature, torch.stack([w, h], dim=-1), mode
+            ))
 
         output = torch.cat(feats, 2)
 
         return output
 
-    def project(self, img_shape, img_feat, sample_points):
+    def project(self, img_shape, img_feat, sample_points, mode='bilinear'):
         """
         :param img_shape: raw image shape
         :param img_feat: [batch_size x channel x h x w]
@@ -112,7 +114,7 @@ class GProjection(nn.Module):
             output = torch.stack([self.project_tensorflow(points_h[i], points_w[i],
                                                           feature_shape, img_feat[i]) for i in range(img_feat.size(0))], 0)
         else:
-            output = F.grid_sample(img_feat, sample_points.unsqueeze(1))
+            output = F.grid_sample(img_feat, sample_points.unsqueeze(1), mode=mode)
             output = torch.transpose(output.squeeze(2), 1, 2)
 
         return output

@@ -30,6 +30,8 @@ class P2MModel(nn.Module):
         self.gconv_activation = options.gconv_activation
         self.gconv_skip_connection = options.gconv_skip_connection.lower()
         self.options = options
+        self.camera_f = camera_f
+        self.camera_c = camera_c
 
         self.mvsnet = MVSNet(freeze_cv=self.freeze_cv,
                              checkpoint=mvsnet_checkpoint)
@@ -39,21 +41,23 @@ class P2MModel(nn.Module):
         depth_channels = 2 if options.use_contrastive_depth else 1
         self.depth_vgg = VGG16P2M(n_classes_input=depth_channels,
                                   pretrained=False)
-        # features: RGB-features + Depth features + cost-volume features
-        #               + Depth + local point coordinates
-        if self.options.feature_fusion_method == 'attention':
-            pre_fusion_features_dim = \
+        # features from each view:
+        # RGB-features + Depth features + cost-volume features + Depth
+        multiview_features_dim = \
                 (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
                 + self.depth_vgg.features_dim \
                 + (self.mvsnet.features_dim \
                     if options.use_costvolume_features else 0) \
-                + (1 if options.use_predicted_depth_as_feature else 0)
+                + (1 if options.use_predicted_depth_as_feature else 0) \
+                + (3 if options.use_backprojected_depth_as_feature else 0)
+        if self.options.feature_fusion_method == 'attention':
+            pre_fusion_features_dim = multiview_features_dim
             if options.num_attention_features <= 0:
                 post_fusion_features_dim = pre_fusion_features_dim
             else:
                 post_fusion_features_dim =  options.num_attention_features
 
-            # local point coordinates for all views
+            # add local point coordinates for all views
             self.features_dim = post_fusion_features_dim + (3 * 3)
             print("==> number of features before/after attention:",
                   pre_fusion_features_dim, post_fusion_features_dim)
@@ -63,14 +67,8 @@ class P2MModel(nn.Module):
                 num_heads=options.num_attention_heads, max_views=3
             )
         else:
-            self.features_dim = ( \
-                (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
-                + self.depth_vgg.features_dim
-                + (self.mvsnet.features_dim \
-                    if options.use_costvolume_features else 0) \
-                + (1 if options.use_predicted_depth_as_feature else 0) \
-                + 3 \
-            ) * 3
+            # add local point coordinates for all views
+            self.features_dim = (multiview_features_dim + 3) * 3
         print("===> number of P2MModel features:", self.features_dim)
 
         self.gcns = nn.ModuleList([
@@ -174,9 +172,12 @@ class P2MModel(nn.Module):
     @staticmethod
     # convenience function for projecting features of a view
     def project_view_features(features, points, view_idx,
-                              img_shape, projection_functor):
+                              img_shape, projection_functor,
+                              *args, **kwargs):
         view_features = [ i[:, view_idx].contiguous() for i in features ]
-        proj_features = projection_functor(img_shape, view_features, points)
+        proj_features = projection_functor(
+            img_shape, view_features, points, *args, **kwargs
+        )
         return proj_features
 
     ##
@@ -184,6 +185,7 @@ class P2MModel(nn.Module):
     #  @param depth_feats list with elements batch x view x channel x height x width
     #  @param costvolume_feats list with elements
     #               batch x view x channel x z x height x width
+    #  @param depth batch x view x height x width
     #  @param pts batch x num_points x 3
     #  @return view pooled tensor of size batch x total_channels x height x width
     def cross_view_feature_pooling(
@@ -229,13 +231,36 @@ class P2MModel(nn.Module):
                         project_3d_features(features=costvolume_feats)
                 proj_feats.append(x_costvolume_feats)
 
-            # features from predicted depth
-            if self.options.use_predicted_depth_as_feature:
-                x_depth = project_2d_features(features=[depth.unsqueeze(2)])
-                proj_feats.append(x_depth)
-
+            # features from predicted/backprojected depth
+            if self.options.use_predicted_depth_as_feature \
+                    or self.options.use_backprojected_depth_as_feature:
+                x_depth = project_2d_features(
+                    features=[depth.unsqueeze(2)], mode='nearest'
+                )
+                if self.options.use_predicted_depth_as_feature:
+                    proj_feats.append(x_depth)
+                if self.options.use_backprojected_depth_as_feature:
+                    backprojected_points_view = \
+                            self.backproject_depth_points(pts_view, x_depth)
+                    T_ref_view = torch.inverse(T_view_ref)
+                    backprojected_points_ref = self.transform_points(
+                        backprojected_points_view, T_ref_view
+                    )
+                    proj_feats.append(backprojected_points_ref)
             transformed_features.append(torch.cat(proj_feats, dim=-1))
         return self.fuse_features(pts_coordinates, transformed_features)
+
+    ##
+    #  @param points 3D points coordinates, batch x num_points x 3
+    #  @param depths depths of each point batch x num_points x 1
+    @staticmethod
+    def backproject_depth_points(points, depths):
+        backprojected_points = points / points[:, :, -1].unsqueeze(-1)
+        backprojected_points *= depths.expand(-1, -1, 3)
+        # the points are in East-Up-South convention, but depths are in East-Down-North
+        # hence z of the points are negative, so negate them again
+        backprojected_points *= -1
+        return backprojected_points
 
     ##
     #  @param coords list of points coordinates in each views' frame
