@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument('--lr-step', nargs='+', type=int)
     parser.add_argument('--augment-ref-views', dest='augment_ref_views', action='store_true')
     parser.add_argument('--no-augment-ref-views', dest='augment_ref_views', action='store_false')
+    parser.add_argument('--mvsnet-features-list', nargs='+', type=int)
     parser.set_defaults(augment_ref_views=False)
 
     args = parser.parse_args()

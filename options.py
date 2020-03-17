@@ -77,6 +77,9 @@ options.model.feature_fusion_method = 'concat'
 options.model.num_attention_heads = 1
 options.model.num_attention_features = -1
 
+options.model.mvsnet = edict()
+options.model.mvsnet.features_list = [64, 128, 256, 512]
+
 options.loss = edict()
 options.loss.weights = edict()
 options.loss.weights.normal = 1.6e-4
@@ -227,6 +230,11 @@ def reset_options(options, args, phase='train'):
             and len(args.rendered_vs_gt_depth_loss_weight) == 3:
         options.loss.weights.rendered_vs_gt_depth \
             = args.rendered_vs_gt_depth_loss_weight
+    if hasattr(args, "mvsnet_features_list") \
+            and args.mvsnet_features_list is not None\
+            and len(args.mvsnet_features_list) == 4:
+        options.model.mvsnet.features_list \
+            = args.mvsnet_features_list
     if hasattr(args, "upsampled_normal_loss") and args.upsampled_normal_loss is not None:
         options.loss.upsampled_normal_loss = args.upsampled_normal_loss
     if hasattr(args, "use_backprojected_depth_loss") \

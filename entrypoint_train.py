@@ -62,6 +62,7 @@ def parse_args():
                         dest='upsampled_normal_loss', action='store_true')
     parser.add_argument('--gconv-skip-connection',
                         help='[none|add|concat]', type=str)
+    parser.add_argument('--mvsnet-features-list', nargs='+', type=int)
 
     parser.add_argument('--use-rgb-features', dest='use_rgb_features',
                         action='store_true')

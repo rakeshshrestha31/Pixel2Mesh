@@ -27,7 +27,11 @@ class DepthTrainer(CheckpointRunner):
             self.model = shared_model
         else:
             # create model
-            self.model = MVSNet(freeze_cv=False)
+            self.model = MVSNet(
+                freeze_cv=False,
+                options=self.options.model.mvsnet,
+                checkpoint=self.options.mvsnet_checkpoint
+            )
             self.model = torch.nn.DataParallel(self.model, device_ids=self.gpus).cuda()
 
         # Setup a joint optimizer for the 2 models

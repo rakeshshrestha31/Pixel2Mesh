@@ -39,7 +39,11 @@ class DepthEvaluator(CheckpointRunner):
         if shared_model is not None:
             self.model = shared_model
         else:
-            self.model = MVSNet(freeze_cv=False)
+            self.model = MVSNet(
+                freeze_cv=False,
+                options=self.options.model.mvsnet,
+                checkpoint=self.options.mvsnet_checkpoint
+            )
             self.model = torch.nn.DataParallel(self.model, device_ids=self.gpus).cuda()
 
         # Evaluate step count, useful in summary

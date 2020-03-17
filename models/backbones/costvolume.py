@@ -151,13 +151,13 @@ class FeatureNet(nn.Module):
         return x
 
 class MVSNet(nn.Module):
-    def __init__(self, freeze_cv, checkpoint=''):
+    def __init__(self, freeze_cv, options, checkpoint=''):
         super(MVSNet, self).__init__()
 
         self.freeze_cv = freeze_cv
         self.feature = VGG16P2M()
 
-        self.cost_regularization = CostRegNet()
+        self.cost_regularization = CostRegNet(options.features_list)
 
         # self.features_dim = 960# + 191
         # self.features_dim = 384
@@ -399,11 +399,12 @@ class ConvBnReLU3D(nn.Module):
         return F.relu(self.bn(self.conv(x)), inplace=True)
 
 class CostRegNet(nn.Module):
-    def __init__(self):
+    def __init__(self, features_list):
         super(CostRegNet, self).__init__()
         # self.features_list = [32, 64, 128, 256]
-        self.features_list = [64, 128, 256, 512]
+        # self.features_list = [64, 128, 256, 512]
         # self.features_list = [100, 200, 400, 800]
+        self.features_list = features_list
         self.conv0 = ConvBnReLU3D(64, self.features_list[0])
 
         self.conv1 = ConvBnReLU3D(self.features_list[0], self.features_list[1], stride=2)

@@ -34,6 +34,7 @@ class P2MModel(nn.Module):
         self.camera_c = camera_c
 
         self.mvsnet = MVSNet(freeze_cv=self.freeze_cv,
+                             options=options.mvsnet,
                              checkpoint=mvsnet_checkpoint)
         if options.use_rgb_features:
             self.rgb_vgg = VGG16P2M(n_classes_input=3, pretrained=False)
