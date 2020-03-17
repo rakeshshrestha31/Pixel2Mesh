@@ -261,6 +261,12 @@ class MVSNet(nn.Module):
     def compute_costvolume_depth(self, features, proj_matrices, depth_values):
         num_views = len(features)
         num_depth = depth_values.shape[1]
+
+        # scale intrinsics based on feature size
+        feature_resize_factor = config.IMG_SIZE / features[0][0].size(-1)
+        for i in proj_matrices:
+            i[:, 1, :2, :3] /= feature_resize_factor
+
         ref_feature = features[0][0]
         src_features = []
         for i in range(len(features[1:3])):
