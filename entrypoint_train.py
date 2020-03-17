@@ -42,9 +42,18 @@ def parse_args():
     parser.add_argument('--rendered-vs-gt-depth-loss-weight',
                         help='rendered vs cv predicted depth loss weight',
                         nargs='+', type=float)
+
+    parser.add_argument('--use-backprojected-depth-loss',
+                        dest='use_backprojected_depth_loss',
+                        action='store_true')
+    parser.add_argument('--dont-use-backprojected-depth-loss',
+                        dest='use_backprojected_depth_loss',
+                        action='store_false')
+
     parser.add_argument('--lr', help='initial learning rate', type=float)
     parser.add_argument('--lr-factor', help='learning rate factor', type=float)
     parser.add_argument('--lr-step', nargs='+', type=int)
+
     parser.add_argument('--train-upsampled-chamfer-loss',
                         dest='train_upsampled_chamfer_loss', action='store_true')
     parser.add_argument('--test-upsampled-chamfer-loss',
@@ -117,6 +126,7 @@ def parse_args():
         only_depth_training=None,
         freeze_cv=None,
         upsampled_normal_loss=None,
+        use_backprojected_depth_loss=None,
         use_rgb_features=None,
         use_costvolume_features=None,
         use_contrastive_depth=None,

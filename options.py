@@ -92,11 +92,15 @@ options.loss.weights.depth = 1e-4
 options.loss.weights.rendered_vs_cv_depth = [0.001, 0.001, 0.001]
 # rendered loss depth compared with ground truth  depth
 options.loss.weights.rendered_vs_gt_depth = [0., 0., 0.]
+options.loss.weights.backprojected_depth = 0.001
+# beta threshold for huber loss
+options.loss.weights.backprojected_depth_beta = 0.01
 options.loss.only_depth_training = False
 options.loss.num_chamfer_upsample = 6466
 # one of ['huber', 'berhu', 'l1', 'l2']
 options.loss.depth_loss_type = 'huber'
 options.loss.upsampled_normal_loss = False
+options.loss.use_backprojected_depth_loss = False
 
 options.train = edict()
 options.train.num_epochs = 200
@@ -225,6 +229,9 @@ def reset_options(options, args, phase='train'):
             = args.rendered_vs_gt_depth_loss_weight
     if hasattr(args, "upsampled_normal_loss") and args.upsampled_normal_loss is not None:
         options.loss.upsampled_normal_loss = args.upsampled_normal_loss
+    if hasattr(args, "use_backprojected_depth_loss") \
+            and args.use_backprojected_depth_loss is not None:
+        options.loss.use_backprojected_depth_loss = args.use_backprojected_depth_loss
     if hasattr(args, "lr") and args.lr is not None:
         options.optim.lr = args.lr
     if hasattr(args, "lr_factor") and args.lr_factor is not None:

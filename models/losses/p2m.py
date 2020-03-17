@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from models.layers.chamfer_wrapper import ChamferDist
 from models.layers.sample_points import PointSampler
+from utils.depth_backprojection import get_points_from_depths
 import numpy as np
 import functools
 
@@ -138,6 +139,19 @@ class P2MLoss(nn.Module):
         return loss
 
     @staticmethod
+    def adaptive_huber_loss(input, target, beta=1./9, reduction='mean'):
+        """
+        very similar to the smooth_l1_loss from pytorch, but with
+        the extra beta parameter
+        """
+        n = torch.abs(input - target)
+        cond = n < beta
+        loss = torch.where(cond, 0.5 * n ** 2 / beta, n - 0.5 * beta)
+        if reduction == 'mean':
+            return loss.mean()
+        return loss.sum()
+
+    @staticmethod
     def huber_loss(x, y):
         return F.smooth_l1_loss(x, y, reduction='mean')
 
@@ -156,6 +170,65 @@ class P2MLoss(nn.Module):
         else:
             return self.depth_loss_function(depth_est, depth_gt, mask)
 
+    ##
+    # @param points num_points x 3
+    # @return num_points x 4
+    @staticmethod
+    def make_homogeneous(points):
+        return torch.cat((points, torch.ones_like(points[:, 0:1])), dim=-1)
+
+    ##
+    # @param points num_points x 4
+    # @return num_points x 3
+    @staticmethod
+    def make_unhomogeneous(points):
+        return points[:, :3]
+
+    ##
+    # @param points_old num_points x 3
+    # @return num_points x 3
+    @staticmethod
+    def transform(T_new_old, points_old):
+        points_old = P2MLoss.make_homogeneous(points_old)
+        # p_new = T_new_old * p_old = p_old' * T_new_old'
+        points_new = P2MLoss.make_unhomogeneous(
+            torch.matmul(points_old,  T_new_old.transpose(0, 1))
+        )
+        return points_new
+
+    def backprojected_depth_loss(self, pred_depths, pred_coord,
+                                 intrinsics, extrinsics):
+        depth_resize_factor = config.IMG_SIZE / pred_depths.size(-1)
+        intrinsics = intrinsics[:2] / depth_resize_factor
+        backprojected_depth_points = get_points_from_depths(
+            pred_depths, intrinsics, extrinsics
+        )
+        batch_size = len(backprojected_depth_points)
+        num_views = len(backprojected_depth_points[0])
+        loss = 0.0
+        num_points = 0
+        # these operations cannot be batched since different batch/views
+        # will have different number of points
+        for batch_idx in range(batch_size):
+            T_ref_world = extrinsics[batch_idx, 0]
+            for view_idx in range(num_views):
+                points_world = backprojected_depth_points[batch_idx][view_idx]
+                points_ref = P2MLoss.transform(T_ref_world, points_world)
+                # only backproj depth to pred coord loss cuz
+                # the depth won't have all the 3D model points due to occlusion
+                for resolution_idx in range(len(pred_coord)):
+                    dist, _, _, _ = self.chamfer_dist(
+                        points_ref.unsqueeze(0),
+                        pred_coord[resolution_idx][batch_idx].unsqueeze(0)
+                    )
+                    loss += self.adaptive_huber_loss(
+                        dist, torch.zeros_like(dist),
+                        beta=self.options.weights.backprojected_depth_beta,
+                        reduction='sum'
+                    )
+                    num_points += points_ref.size(0)
+        loss = self.options.weights.backprojected_depth * loss / num_points
+        return loss
     ##
     #  @param pred_coord tensor of coords
     def upsample_coords(self, coords, ellipsoid_idx):
@@ -205,6 +278,7 @@ class P2MLoss(nn.Module):
         normal_loss = torch.tensor(0., device=device)
         rendered_vs_cv_depth_loss = torch.tensor(0., device=device)
         rendered_vs_gt_depth_loss = torch.tensor(0., device=device)
+        backprojected_depth_loss = torch.tensor(0., device=device)
         lap_const = [0.2, 1., 1.]
 
         gt_coord, gt_normal, \
@@ -213,6 +287,7 @@ class P2MLoss(nn.Module):
         pred_coord = outputs["pred_coord"]
         pred_coord_before_deform = outputs["pred_coord_before_deform"]
         pred_depths = outputs["depths"]
+        masked_pred_depths = pred_depths * masks
         rendered_depths, rendered_depths_before_deform = \
             outputs["rendered_depths"], outputs["rendered_depths_before_deform"]
         image_loss = 0.
@@ -267,18 +342,27 @@ class P2MLoss(nn.Module):
             rendered_vs_cv_depth_loss += \
                 self.options.weights.rendered_vs_cv_depth[i] \
                     * self.depth_loss(rendered_depths[i],
-                                      pred_depths * masks, all_valid_masks)
+                                      masked_pred_depths, all_valid_masks)
             rendered_vs_gt_depth_loss += \
                 self.options.weights.rendered_vs_gt_depth[i] \
                     * self.depth_loss(rendered_depths[i], gt_depths,
                                       all_valid_masks)
+
+        if self.options.use_backprojected_depth_loss:
+            extrinsics = targets['proj_matrices'][:, :, 0].contiguous()
+            intrinsics = targets['proj_matrices'][0, 0, 1, :3, :3].contiguous()
+            backprojected_depth_loss += self.backprojected_depth_loss(
+                masked_pred_depths, upsampled_pred_coord, intrinsics, extrinsics
+            )
         depth_loss += self.depth_loss(gt_depths, pred_depths, masks)
 
         #
         if self.options.only_depth_training:
             loss = depth_loss
         else:
-            loss = chamfer_loss + image_loss * self.options.weights.reconst + \
+            loss = chamfer_loss + \
+                   backprojected_depth_loss + \
+                   image_loss * self.options.weights.reconst + \
                    self.options.weights.laplace * lap_loss + \
                    self.options.weights.move * move_loss + \
                    self.options.weights.edge * edge_loss + \
@@ -306,6 +390,9 @@ class P2MLoss(nn.Module):
                     / np.sum(self.options.weights.rendered_vs_cv_depth),
             "loss_rendered_vs_gt_depth": \
                 rendered_vs_gt_depth_loss / sum_rendered_vs_gt_depth_weights,
+            "loss_backprojected_depth": \
+                    backprojected_depth_loss \
+                        / self.options.weights.backprojected_depth
         }
         nan_losses = {
             key: value.item() for key, value in loss_summary.items()
