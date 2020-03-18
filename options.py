@@ -67,7 +67,11 @@ options.model.align_with_tensorflow = False
 options.model.gconv_skip_connection = 'none'
 options.model.use_rgb_features = True
 options.model.use_costvolume_features = True
+
+# if use_depth_features=False, use_contrastive_depth is ignored
+options.model.use_depth_features = True
 options.model.use_contrastive_depth = True
+
 options.model.use_predicted_depth_as_feature = True
 options.model.use_backprojected_depth_as_feature = False
 options.model.use_multiview_coords_as_feature = False
@@ -259,6 +263,9 @@ def reset_options(options, args, phase='train'):
     if hasattr(args, "use_costvolume_features") \
             and args.use_costvolume_features is not None:
         options.model.use_costvolume_features = args.use_costvolume_features
+    if hasattr(args, "use_depth_features") \
+            and args.use_depth_features is not None:
+        options.model.use_depth_features = args.use_depth_features
     if hasattr(args, "use_contrastive_depth") \
             and args.use_contrastive_depth is not None:
         options.model.use_contrastive_depth = args.use_contrastive_depth

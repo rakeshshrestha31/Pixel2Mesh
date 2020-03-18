@@ -74,6 +74,11 @@ def parse_args():
     parser.add_argument('--dont-use-costvolume-features', dest='use_costvolume_features',
                         action='store_false')
 
+    parser.add_argument('--use-depth-features', dest='use_depth_features',
+                        action='store_true')
+    parser.add_argument('--dont-use-depth-features', dest='use_depth_features',
+                        action='store_false')
+
     parser.add_argument('--use-contrastive-depth', dest='use_contrastive_depth',
                         action='store_true')
     parser.add_argument('--dont-use-contrastive-depth', dest='use_contrastive_depth',
@@ -130,6 +135,7 @@ def parse_args():
         use_backprojected_depth_loss=None,
         use_rgb_features=None,
         use_costvolume_features=None,
+        use_depth_features=None,
         use_contrastive_depth=None,
         use_predicted_depth_as_feature=None,
         use_backprojected_depth_as_feature=None,

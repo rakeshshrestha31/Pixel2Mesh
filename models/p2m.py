@@ -39,14 +39,16 @@ class P2MModel(nn.Module):
         if options.use_rgb_features:
             self.rgb_vgg = VGG16P2M(n_classes_input=3, pretrained=False)
 
-        depth_channels = 2 if options.use_contrastive_depth else 1
-        self.depth_vgg = VGG16P2M(n_classes_input=depth_channels,
-                                  pretrained=False)
+        if options.use_depth_features:
+            depth_channels = 2 if options.use_contrastive_depth else 1
+            self.depth_vgg = VGG16P2M(n_classes_input=depth_channels,
+                                      pretrained=False)
         # features from each view:
         # RGB-features + Depth features + cost-volume features + Depth
         multiview_features_dim = \
                 (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
-                + self.depth_vgg.features_dim \
+                + (self.depth_vgg.features_dim if options.use_depth_features \
+                        else 0) \
                 + (self.mvsnet.features_dim \
                     if options.use_costvolume_features else 0) \
                 + (1 if options.use_predicted_depth_as_feature else 0) \
@@ -203,7 +205,7 @@ class P2MModel(nn.Module):
     ):
         T_ref_world = proj_mat[:, 0, 0]
         T_world_ref = torch.inverse(T_ref_world)
-        num_views = depth_feats[0].size(1)
+        num_views = depth.size(1)
         transformed_features = []
 
         projection_3d = functools.partial(self.projection_3d,
@@ -231,8 +233,9 @@ class P2MModel(nn.Module):
                 proj_feats.append(x_img_feats)
 
             # features from depths
-            x_depth_feats = project_2d_features(features=depth_feats)
-            proj_feats.append(x_depth_feats)
+            if self.options.use_depth_features:
+                x_depth_feats = project_2d_features(features=depth_feats)
+                proj_feats.append(x_depth_feats)
 
             # features from costvolume
             if self.options.use_costvolume_features:
@@ -246,8 +249,10 @@ class P2MModel(nn.Module):
                 x_depth = project_2d_features(
                     features=[depth.unsqueeze(2)], mode='bilinear'
                 )
+                # features from predicted depth
                 if self.options.use_predicted_depth_as_feature:
                     proj_feats.append(x_depth)
+                # features from backprojected depth
                 if self.options.use_backprojected_depth_as_feature:
                     backprojected_points_view = \
                             self.backproject_depth_points(pts_view, x_depth)
@@ -343,18 +348,22 @@ class P2MModel(nn.Module):
     #  @param pred_depth  batch x view x h x w
     #  @param rendered_depth batch x view x h x w
     def get_depth_features(self, pred_depth, rendered_depth):
-        batch_size = pred_depth.size(0)
-        # unsqeeze 1 to simulate channels (single channel)
-        pred_depth = P2MModel.flatten_batch_view(pred_depth).unsqueeze(1)
-        rendered_depth = self.flatten_batch_view(rendered_depth).unsqueeze(1)
-        if self.options.use_contrastive_depth:
-            joint_input = torch.cat((pred_depth, rendered_depth), dim=1)
+        if self.options.use_depth_features:
+            batch_size = pred_depth.size(0)
+            # unsqeeze 1 to simulate channels (single channel)
+            pred_depth = P2MModel.flatten_batch_view(pred_depth).unsqueeze(1)
+            rendered_depth = self.flatten_batch_view(rendered_depth) \
+                                 .unsqueeze(1)
+            if self.options.use_contrastive_depth:
+                joint_input = torch.cat((pred_depth, rendered_depth), dim=1)
+            else:
+                joint_input = pred_depth
+            joint_features = self.depth_vgg(joint_input)
+            return [
+                self.unflatten_batch_view(i, batch_size) for i in joint_features
+            ]
         else:
-            joint_input = pred_depth
-        joint_features = self.depth_vgg(joint_input)
-        return [
-            self.unflatten_batch_view(i, batch_size) for i in joint_features
-        ]
+            return []
 
     ##
     #  @param depth_features 2D list of size num_views x num_features
