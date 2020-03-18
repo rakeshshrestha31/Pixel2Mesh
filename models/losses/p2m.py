@@ -374,9 +374,14 @@ class P2MLoss(nn.Module):
         # loss = depth_loss
 
         loss = loss * self.options.weights.constant
-        sum_rendered_vs_gt_depth_weights = np.sum(
-            self.options.weights.rendered_vs_gt_depth
-        ) if np.any(self.options.weights.rendered_vs_gt_depth) else 1.0
+
+        # avoid divisions by zero
+        def get_weights_norm(weights):
+            return np.sum(weights) if np.any(weights) else 1.0
+        norm_rendered_vs_gt_depth_weights = \
+                get_weights_norm(self.options.weights.rendered_vs_gt_depth)
+        norm_rendered_vs_cv_depth_weights = \
+                get_weights_norm(self.options.weights.rendered_vs_cv_depth)
         loss_summary = {
             "loss": loss,
             "loss_chamfer": chamfer_loss / np.sum(self.options.weights.chamfer),
@@ -385,11 +390,10 @@ class P2MLoss(nn.Module):
             "loss_move": move_loss,
             "loss_normal": normal_loss,
             "loss_depth": depth_loss,
-            "loss_rendered_vs_cv_depth": \
-                rendered_vs_cv_depth_loss \
-                    / np.sum(self.options.weights.rendered_vs_cv_depth),
+            "loss_rendered_vs_cv_depth":
+                rendered_vs_cv_depth_loss / norm_rendered_vs_cv_depth_weights,
             "loss_rendered_vs_gt_depth": \
-                rendered_vs_gt_depth_loss / sum_rendered_vs_gt_depth_weights,
+                rendered_vs_gt_depth_loss / norm_rendered_vs_gt_depth_weights,
             "loss_backprojected_depth": \
                     backprojected_depth_loss \
                         / self.options.weights.backprojected_depth
