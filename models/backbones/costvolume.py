@@ -222,6 +222,18 @@ class MVSNet(nn.Module):
         features = [self.feature(img) for img in imgs_list]
         return features
 
+    # scale intrinsics based on the feature size
+    @staticmethod
+    def rescale_proj_matrices(proj_matrices, img_size, feature_size):
+        feature_resize_factor = (
+            img_size[0] / feature_size[0],
+            img_size[1] / feature_size[1]
+        )
+        # avoid mutating the original proj_matrices argument
+        new_proj_matrices = proj_matrices.clone()
+        new_proj_matrices[:, :, 1, 0, :3] /= feature_resize_factor[0]
+        new_proj_matrices[:, :, 1, 1, :3] /= feature_resize_factor[1]
+        return new_proj_matrices
 
     def forward(self, input_batch):
         imgs = input_batch["images"]
@@ -242,6 +254,11 @@ class MVSNet(nn.Module):
         # in: images; out: 32-channel feature maps
         features = self.get_features_batched(imgs)
 
+        # scale intrinsics based on the feature size
+        proj_matrices = self.rescale_proj_matrices(
+            proj_matrices, imgs.size()[-2:], features[0][0].size()[-2:]
+        )
+
         costvolume_outputs = {'features': [], 'depths': []}
 
         for view_list in view_lists:
@@ -261,11 +278,6 @@ class MVSNet(nn.Module):
     def compute_costvolume_depth(self, features, proj_matrices, depth_values):
         num_views = len(features)
         num_depth = depth_values.shape[1]
-
-        # scale intrinsics based on feature size
-        feature_resize_factor = config.IMG_SIZE / features[0][0].size(-1)
-        for i in proj_matrices:
-            i[:, 1, :2, :3] /= feature_resize_factor
 
         ref_feature = features[0][0]
         src_features = []
