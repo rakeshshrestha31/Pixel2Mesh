@@ -5,11 +5,11 @@ import torch
 import torch.nn as nn
 from models.layers.multihead_attention import MultiheadAttention
 
-class AttentionFeaturePooling(nn.Module):
+class MultiHeadAttentionFeaturePooling(nn.Module):
     def __init__(self, input_features_dim, output_features_dim,
                  num_heads, use_stats_query,
                  max_views=3, bias=True):
-        super(AttentionFeaturePooling, self).__init__()
+        super(MultiHeadAttentionFeaturePooling, self).__init__()
         self.max_views = max_views
         self.use_stats_query = use_stats_query
 

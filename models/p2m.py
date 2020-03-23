@@ -9,7 +9,10 @@ from models.layers.gconv import GConv
 from models.layers.gpooling import GUnpooling
 from models.layers.gprojection import GProjection
 from models.layers.gprojection_xyz import GProjection as GProjectionXYZ
-from models.layers.attention_feature_pooling import AttentionFeaturePooling
+from models.layers.multihead_attention_feature_pooling \
+        import MultiHeadAttentionFeaturePooling
+from models.layers.simple_attention_feature_pooling \
+        import SimpleAttentionFeaturePooling
 import config
 
 import neural_renderer as nr
@@ -58,25 +61,15 @@ class P2MModel(nn.Module):
         # 3: coordinates from reference view only
         coords_features_dim = (9 if options.use_multiview_coords_as_feature \
                                 else 3)
-        if self.options.feature_fusion_method == 'attention':
-            pre_fusion_features_dim = multiview_features_dim
-            if options.num_attention_features <= 0:
-                post_fusion_features_dim = pre_fusion_features_dim
-            else:
-                post_fusion_features_dim =  options.num_attention_features
-
-            self.features_dim = \
-                (post_fusion_features_dim \
-                    * (3 if options.use_stats_query_attention else 1) \
-                ) + coords_features_dim
-            print("==> number of features before/after attention:",
-                  pre_fusion_features_dim, post_fusion_features_dim)
-
-            self.attention_model = AttentionFeaturePooling(
-                pre_fusion_features_dim, post_fusion_features_dim,
-                num_heads=options.num_attention_heads, max_views=3,
-                use_stats_query=options.use_stats_query_attention
+        if self.options.feature_fusion_method == 'multihead_attention':
+            attention_features_dim = self.init_multihead_attention(
+                multiview_features_dim
             )
+            self.features_dim = attention_features_dim + coords_features_dim
+        elif self.options.feature_fusion_method == 'simple_attention':
+            attention_features_dim = \
+                    self.init_simple_attention(multiview_features_dim)
+            self.features_dim = attention_features_dim + coords_features_dim
         else:
             # add local point coordinates for all views
             self.features_dim = (multiview_features_dim * 3) + coords_features_dim
@@ -119,6 +112,32 @@ class P2MModel(nn.Module):
 
         self.ellipsoid = ellipsoid
         self.init_renderer(camera_f, camera_c)
+
+    def init_multihead_attention(self, multiview_features_dim):
+        pre_fusion_features_dim = multiview_features_dim
+        if self.options.num_attention_features <= 0:
+            post_fusion_features_dim = pre_fusion_features_dim
+        else:
+            post_fusion_features_dim = self.options.num_attention_features
+
+        features_dim = \
+            post_fusion_features_dim \
+                * (3 if self.options.use_stats_query_attention else 1)
+        print("==> number of features before/after attention:",
+              pre_fusion_features_dim, post_fusion_features_dim)
+
+        self.attention_model = MultiHeadAttentionFeaturePooling(
+            pre_fusion_features_dim, post_fusion_features_dim,
+            num_heads=self.options.num_attention_heads, max_views=3,
+            use_stats_query=self.options.use_stats_query_attention
+        )
+        return features_dim
+
+    def init_simple_attention(self, multiview_features_dim):
+        self.attention_model = \
+                SimpleAttentionFeaturePooling(multiview_features_dim)
+        # features size doesn't change cuz its weighted sum
+        return multiview_features_dim
 
     def init_renderer(self, camera_f, camera_c):
         self.renderer = nr.Renderer(
@@ -294,7 +313,8 @@ class P2MModel(nn.Module):
         elif self.options.feature_fusion_method == 'stats':
             features_stats = self.get_features_stats(features)
             return torch.cat(subset_coords + [features_stats], dim=-1)
-        elif self.options.feature_fusion_method == 'attention':
+        elif self.options.feature_fusion_method in \
+                ['multihead_attention', 'simple_attention']:
             features_attn = self.attention_fusion(features)
             return torch.cat(subset_coords + [features_attn], dim=-1)
         else:
