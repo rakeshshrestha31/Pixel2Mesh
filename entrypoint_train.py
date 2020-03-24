@@ -6,7 +6,7 @@ import torch
 # import open3d as o3d
 from functions.trainer import Trainer
 from options import update_options, options, reset_options
-
+from utils.args_utils import add_model_args
 
 
 def parse_args():
@@ -60,87 +60,14 @@ def parse_args():
                         dest='test_upsampled_chamfer_loss', action='store_true')
     parser.add_argument('--upsampled-normal-loss',
                         dest='upsampled_normal_loss', action='store_true')
-    parser.add_argument('--gconv-skip-connection',
-                        help='[none|add|concat]', type=str)
-    parser.add_argument('--mvsnet-features-list', nargs='+', type=int)
-
-    parser.add_argument('--use-rgb-features', dest='use_rgb_features',
-                        action='store_true')
-    parser.add_argument('--dont-use-rgb-features', dest='use_rgb_features',
-                        action='store_false')
-
-    parser.add_argument('--use-costvolume-features', dest='use_costvolume_features',
-                        action='store_true')
-    parser.add_argument('--dont-use-costvolume-features', dest='use_costvolume_features',
-                        action='store_false')
-
-    parser.add_argument('--use-depth-features', dest='use_depth_features',
-                        action='store_true')
-    parser.add_argument('--dont-use-depth-features', dest='use_depth_features',
-                        action='store_false')
-
-    parser.add_argument('--use-contrastive-depth', dest='use_contrastive_depth',
-                        action='store_true')
-    parser.add_argument('--dont-use-contrastive-depth', dest='use_contrastive_depth',
-                        action='store_false')
-
-    parser.add_argument('--use-predicted-depth-as-feature',
-                        dest='use_predicted_depth_as_feature',
-                        action='store_true')
-    parser.add_argument('--dont-use-predicted-depth-as-feature',
-                        dest='use_predicted_depth_as_feature',
-                        action='store_false')
-
-    parser.add_argument('--use-backprojected-depth-as-feature',
-                        dest='use_backprojected_depth_as_feature',
-                        action='store_true')
-    parser.add_argument('--dont-use-backprojected-depth-as-feature',
-                        dest='use_backprojected_depth_as_feature',
-                        action='store_false')
-
-    parser.add_argument('--use-multiview-coords-as-feature',
-                        dest='use_multiview_coords_as_feature',
-                        action='store_true')
-    parser.add_argument('--dont-use-multiview-coords-as-feature',
-                        dest='use_multiview_coords_as_feature',
-                        action='store_false')
-
-    parser.add_argument('--use-stats-query-attention',
-                        dest='use_stats_query_attention',
-                        help='use statistical features '
-                             'for attention query vector',
-                        action='store_true')
-    parser.add_argument('--dont-use-stats-query-attention',
-                        dest='use_stats_query_attention',
-                        help='don\'t use statistical features '
-                             'for attention query vector',
-                        action='store_false')
-
-    parser.add_argument('--feature-fusion-method',
-                        help='[concat|stats|attention]', type=str)
-    parser.add_argument('--num-attention-heads',
-                        help='number of attention heads', type=int)
-    parser.add_argument('--num-attention-features',
-                        help='number of attention features '
-                             '< 0 indicates no change in features number '
-                             'from input',
-                        type=int)
-
-    # set the default booleans to None otherwise it will be False and
-    # overwrite the default options
+    add_model_args(parser)
     parser.set_defaults(
         only_depth_training=None,
         freeze_cv=None,
         upsampled_normal_loss=None,
         use_backprojected_depth_loss=None,
-        use_rgb_features=None,
-        use_costvolume_features=None,
-        use_depth_features=None,
-        use_contrastive_depth=None,
-        use_predicted_depth_as_feature=None,
-        use_backprojected_depth_as_feature=None,
-        use_multiview_coords_as_feature=None,
-        use_stats_query_attention=None
+        train_upsampled_chamfer_loss=None,
+        test_upsampled_chamfer_loss=None
     )
 
     args = parser.parse_args()

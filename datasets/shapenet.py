@@ -102,6 +102,8 @@ class ShapeNet(BaseDataset):
             "points": pts,
             "normals": normals,
             "labels": self.labels_map[label],
+            "label_name": label,
+            "label_appendix": label_appendix,
             "filename": filename,
             "length": length,
             "proj_matrices": proj_matrices,

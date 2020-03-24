@@ -3,6 +3,7 @@ import sys
 
 from functions.evaluator import Evaluator
 from options import update_options, options, reset_options
+from utils.args_utils import add_model_args
 
 
 def parse_args():
@@ -21,6 +22,20 @@ def parse_args():
     parser.add_argument('--version', help='version of task (timestamp by default)', type=str)
     parser.add_argument('--name', help='subfolder name of this experiment', required=True, type=str)
     parser.add_argument('--gpus', help='number of GPUs to use', type=int)
+
+    parser.add_argument('--test-upsampled-chamfer-loss',
+                        dest='test_upsampled_chamfer_loss', action='store_true')
+    parser.add_argument('--prediction-dir', help='location to save predicted mesh', type=str)
+    add_model_args(parser)
+
+    parser.set_defaults(
+        only_depth_training=None,
+        freeze_cv=None,
+        upsampled_normal_loss=None,
+        use_backprojected_depth_loss=None,
+        train_upsampled_chamfer_loss=None,
+        test_upsampled_chamfer_loss=None
+    )
 
     args = parser.parse_args()
 

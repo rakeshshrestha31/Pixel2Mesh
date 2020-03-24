@@ -127,6 +127,9 @@ options.test.batch_size = 32
 options.test.shuffle = False
 options.test.weighted_mean = False
 options.test.upsampled_chamfer_loss = False
+# directory to store predicted meshes
+# null string means predictions aren't saved
+options.test.prediction_dir = ''
 
 options.optim = edict()
 options.optim.name = "adam"
@@ -254,6 +257,8 @@ def reset_options(options, args, phase='train'):
         options.train.upsampled_chamfer_loss = args.train_upsampled_chamfer_loss
     if hasattr(args, "test_upsampled_chamfer_loss") and args.test_upsampled_chamfer_loss is not None:
         options.test.upsampled_chamfer_loss = args.test_upsampled_chamfer_loss
+    if hasattr(args, "prediction_dir") and args.prediction_dir is not None:
+        options.test.prediction_dir = args.prediction_dir
     if hasattr(args, "gconv_skip_connection") \
             and args.gconv_skip_connection is not None \
             and args.gconv_skip_connection.lower() in ['none', 'add', 'concat']:

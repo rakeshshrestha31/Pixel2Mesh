@@ -1,10 +1,13 @@
 from logging import Logger
 
+import os
+import json
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+import config
 from functions.base import CheckpointRunner
 from functions.check_best import CheckBest
 from models.classifier import Classifier
@@ -30,6 +33,31 @@ class Evaluator(CheckpointRunner):
             CheckBest('f1_2tau', 'best_test_f1_2tau', is_loss=False)
         ]
         self.upsampled_chamfer_loss = options.test.upsampled_chamfer_loss
+        self.prepare_prediction_dir()
+        self.init_label_map()
+
+    def init_label_map(self):
+        dataset_meta_file = os.path.join(config.SHAPENET_ROOT,
+                                         "meta", "shapenet.json")
+        with open(dataset_meta_file, "r") as fp:
+            labels_map = json.load(fp)
+            # the shapenet dataset interface sorts the keys
+            sorted_keys = sorted(list(labels_map.keys()))
+            self.labels_map = {
+                idx: labels_map[key]
+                for idx, key in enumerate(sorted_keys)
+            }
+
+    def prepare_prediction_dir(self):
+        # the predict/0 for compatibility with original pixel2mesh++ code
+        if self.options.test.prediction_dir:
+            self.prediction_dir = os.path.join(
+                self.options.test.prediction_dir, self.options.name,
+                'predict', '0'
+            )
+            os.makedirs(self.prediction_dir, exist_ok=True)
+        else:
+            self.prediction_dir = ''
 
     # noinspection PyAttributeOutsideInit
     def init_fn(self, shared_model=None, **kwargs):
@@ -95,18 +123,12 @@ class Evaluator(CheckpointRunner):
         # calculate accurate chamfer distance; ground truth points with different lengths;
         # therefore cannot be batched
         batch_size = pred_vertices.size(0)
-        if self.upsampled_chamfer_loss:
-            upsampled_pred_vertices, _ = self.p2m_loss.upsample_coords(
-                pred_vertices, -1
-            )
-        else:
-            upsampled_pred_vertices = pred_vertices
-        pred_length = upsampled_pred_vertices.size(1)
+        pred_length = pred_vertices.size(1)
         for i in range(batch_size):
             gt_length = gt_points[i].size(0)
             label = labels[i].cpu().item()
             d1, d2, i1, i2 = self.p2m_loss.chamfer_dist(
-                upsampled_pred_vertices[i].unsqueeze(0),
+                pred_vertices[i].unsqueeze(0),
                 gt_points[i].unsqueeze(0)
             )
             d1, d2 = d1.cpu().numpy(), d2.cpu().numpy()  # convert to millimeter
@@ -148,8 +170,15 @@ class Evaluator(CheckpointRunner):
                 # gt_points = input_batch["points"]
                 if isinstance(gt_points, list):
                     gt_points = [pts.cuda() for pts in gt_points]
+                if self.upsampled_chamfer_loss:
+                    upsampled_pred_vertices, _ = self.p2m_loss.upsample_coords(
+                        pred_vertices, -1
+                    )
+                else:
+                    upsampled_pred_vertices = pred_vertices
+                out["upsampled_coord"] = upsampled_pred_vertices
                 self.evaluate_chamfer_and_f1(
-                    pred_vertices,
+                    upsampled_pred_vertices,
                     self.ellipsoid.faces[-1],
                     gt_points, input_batch["labels"]
                 )
@@ -222,6 +251,9 @@ class Evaluator(CheckpointRunner):
             if self.evaluate_step_count % self.options.test.summary_steps == 0:
                 self.evaluate_summaries(batch, out)
 
+            if self.options.test.prediction_dir:
+                self.save_predictions(batch, out)
+
             # add later to log at step 0
             self.evaluate_step_count += 1
             self.total_step_count += 1
@@ -233,6 +265,9 @@ class Evaluator(CheckpointRunner):
                 scalar = val.avg
             self.logger.info("Test [%06d] %s: %.6f" % (self.total_step_count, key, scalar))
             self.summary_writer.add_scalar("eval_" + key, scalar, self.total_step_count + 1)
+
+        if self.options.test.prediction_dir:
+            self.log_category_summary()
 
         # save checkpoint if best
         for check_best in self.check_best_metrics:
@@ -279,6 +314,36 @@ class Evaluator(CheckpointRunner):
                 "acc_5": self.acc_5,
             }
 
+    def get_category_summary(self):
+        if self.options.model.name == "pixel2mesh":
+            def indexed_average(average_meter_list):
+                return {
+                    self.labels_map[key]["name"]: value.avg
+                    for key, value in enumerate(average_meter_list)
+                }
+
+            return {
+                "cd": indexed_average(self.chamfer_distance),
+                "depth_loss": indexed_average(self.depth_loss),
+                "r_cv_depth_loss": \
+                    indexed_average(self.rendered_vs_cv_depth_loss),
+                "r_gt_depth_loss": \
+                        indexed_average(self.rendered_vs_gt_depth_loss),
+                "f1_tau": indexed_average(self.f1_tau),
+                "f1_2tau": indexed_average(self.f1_2tau),
+            }
+        elif self.options.model.name == "classifier":
+            return {
+                "acc_1": self.acc_1,
+                "acc_5": self.acc_5,
+            }
+
+    def log_category_summary(self):
+        self.logger.info(
+            "Category summary: \n" \
+                    + json.dumps(self.get_category_summary(), indent=4)
+        )
+
     def evaluate_summaries(self, input_batch, out_summary):
         self.logger.info("Test Step %06d/%06d (%06d) " % (self.evaluate_step_count,
                                                           len(self.dataset) // (
@@ -293,3 +358,22 @@ class Evaluator(CheckpointRunner):
             # Do visualization for the first 2 images of the batch
             render_mesh = self.renderer.p2m_batch_visualize(input_batch, out_summary, self.ellipsoid.faces)
             self.summary_writer.add_image("eval_render_mesh", render_mesh, self.total_step_count)
+
+    def save_predictions(self, input_batch, output_batch):
+        for batch_idx, (label_name, label_appendix) in enumerate(
+                zip(input_batch["label_name"], input_batch["label_appendix"])):
+            gt_points = input_batch["points"][batch_idx].cpu()
+            predicted_points = output_batch["upsampled_coord"][batch_idx].cpu()
+
+            gt_filename = os.path.join(
+                self.prediction_dir,
+                "{}_{}_ground.xyz".format(label_name, label_appendix)
+            )
+            predicted_filename = os.path.join(
+                self.prediction_dir,
+                "{}_{}_predict.xyz".format(label_name, label_appendix)
+            )
+
+            np.savetxt(gt_filename, gt_points)
+            np.savetxt(predicted_filename, predicted_points)
+
