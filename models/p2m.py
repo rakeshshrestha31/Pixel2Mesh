@@ -217,7 +217,10 @@ class P2MModel(nn.Module):
     #               batch x view x channel x z x height x width
     #  @param depth batch x view x height x width
     #  @param pts batch x num_points x 3
-    #  @return view pooled tensor of size batch x total_channels x height x width
+    #  @return 2-tuple
+    #       1- view pooled tensor of size batch x total_channels x height x width
+    #       2- views weights batch x view x num_points x 1
+    #  @return 2-tuple of (fused_features, fusion_weight)
     def cross_view_feature_pooling(
             self, img_shape, img_feats, depth_feats,
             costvolume_feats, depth, pts, proj_mat, depth_values
@@ -299,6 +302,7 @@ class P2MModel(nn.Module):
     #  @param coords list of points coordinates in each views' frame
     #  @param features list of features of size
     #           batch x num_points x num_channels for each view
+    #  @return 2-tuple of (fused_features, fusion_weight)
     def fuse_features(self, coords, features):
         subset_coords = coords if self.options.use_multiview_coords_as_feature \
                             else [coords[0]]
@@ -309,14 +313,15 @@ class P2MModel(nn.Module):
                 joint_features = self.flatten_2d_list(zip(coords, features))
             else:
                 joint_features = subset_coords + features
-            return torch.cat(joint_features, dim=-1)
+            return torch.cat(joint_features, dim=-1), None
         elif self.options.feature_fusion_method == 'stats':
             features_stats = self.get_features_stats(features)
-            return torch.cat(subset_coords + [features_stats], dim=-1)
+            return torch.cat(subset_coords + [features_stats], dim=-1), None
         elif self.options.feature_fusion_method in \
                 ['multihead_attention', 'simple_attention']:
-            features_attn = self.attention_fusion(features)
-            return torch.cat(subset_coords + [features_attn], dim=-1)
+            features_attn, weights_attn = self.attention_fusion(features)
+            return torch.cat(subset_coords + [features_attn], dim=-1), \
+                        weights_attn
         else:
             print('unknown method %r' % self.options.feature_fusion_method)
             exit(0)
@@ -326,7 +331,7 @@ class P2MModel(nn.Module):
         batch_size, num_points, num_features = features[0].size()
 
         # the batch number of points should be flattened
-        # Each point acts independently regarless of the batch it belongs to
+        # Each point acts independently regardless of the batch it belongs to
         # TODO: verify if this is the right approach
         flattened_features = torch.stack(features, dim=0) \
                                   .view(num_views, -1, num_features)
@@ -335,7 +340,7 @@ class P2MModel(nn.Module):
                                      .view(batch_size, num_points, -1)
         weights_attn = weights_attn.squeeze(1) \
                                    .view(batch_size, num_points, num_views, -1)
-        return features_attn
+        return features_attn, weights_attn
 
     #  @param features list of features of size
     #           batch x num_points x num_channels for each view
@@ -410,6 +415,7 @@ class P2MModel(nn.Module):
 
         rendered_depths_before_deform = [None for _ in range(3)]
         rendered_depths = [None for _ in range(3)]
+        view_weights = [None for _ in range(3)]
         batched_faces = [
             self.ellipsoid.faces[i].unsqueeze(0).expand(batch_size, -1, -1)
             for i in range(3)
@@ -440,7 +446,7 @@ class P2MModel(nn.Module):
 
         # GCN Block 1
         # x1 shape is torch.Size([16, 156, 3]), x_h
-        x = self.cross_view_feature_pooling(
+        x, view_weights[0] = self.cross_view_feature_pooling(
             img_shape, rgb_features, depth_features, costvolume_features,
             masked_pred_depth, init_pts, proj_mat, depth_values
         )
@@ -462,11 +468,15 @@ class P2MModel(nn.Module):
         )
 
         # GCN Block 2
-        x = self.cross_view_feature_pooling(
+        x, view_weights[1] = self.cross_view_feature_pooling(
             img_shape, rgb_features, depth_features, costvolume_features,
             masked_pred_depth, x1, proj_mat, depth_values
         )
         x = self.unpooling[0](torch.cat([x, x_hidden], 2))
+        # the GCN Block 2 uses 156 points only, but are later unpooled to 628
+        if view_weights[1] is not None:
+            view_weights[1] = self.unpooling[0](view_weights[1].squeeze(-1)) \
+                                  .unsqueeze(-1)
 
         # after deformation 2
         x2, x_hidden = self.gcns[1](x)
@@ -487,11 +497,15 @@ class P2MModel(nn.Module):
 
         # GCN Block 3
         # x2 shape is torch.Size([16, 618, 3])
-        x = self.cross_view_feature_pooling(
+        x, view_weights[2] = self.cross_view_feature_pooling(
             img_shape, rgb_features, depth_features, costvolume_features,
             masked_pred_depth, x2, proj_mat, depth_values
         )
         x = self.unpooling[1](torch.cat([x, x_hidden], 2))
+        # the GCN Block 3 uses 628 points only, but are later unpooled to 2466
+        if view_weights[2] is not None:
+            view_weights[2] = self.unpooling[1](view_weights[2].squeeze(-1)) \
+                                  .unsqueeze(-1)
 
         x3, _ = self.gcns[2](x)
 
@@ -521,7 +535,8 @@ class P2MModel(nn.Module):
             "reconst": None,
             "depths": out_mvsnet["depths"],
             "rendered_depths": rendered_depths,
-            "rendered_depths_before_deform": rendered_depths_before_deform
+            "rendered_depths_before_deform": rendered_depths_before_deform,
+            "view_weights": view_weights
         }
 
     def mesh_to_depth(self, coords, faces, proj_mat, image_shape):

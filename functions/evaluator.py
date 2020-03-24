@@ -356,8 +356,18 @@ class Evaluator(CheckpointRunner):
                                           self.total_step_count)
         if self.renderer is not None:
             # Do visualization for the first 2 images of the batch
-            render_mesh = self.renderer.p2m_batch_visualize(input_batch, out_summary, self.ellipsoid.faces)
+            render_mesh = self.renderer.p2m_batch_visualize(
+                input_batch, out_summary, self.ellipsoid.faces
+            )
             self.summary_writer.add_image("eval_render_mesh", render_mesh, self.total_step_count)
+            # debug
+            # img = (render_mesh*255).permute((1, 2, 0)).cpu() \
+            #                        .numpy().astype(np.uint8)
+            # import cv2
+            # cv2.imwrite(
+            #     '/tmp/render_mesh_%d.png' % self.total_step_count,
+            #     cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            # )
 
     def save_predictions(self, input_batch, output_batch):
         for batch_idx, (label_name, label_appendix) in enumerate(
