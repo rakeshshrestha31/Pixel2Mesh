@@ -124,6 +124,8 @@ options.test = edict()
 options.test.dataset = []
 options.test.summary_steps = 20
 options.test.batch_size = 32
+options.test.train_batch_size = 32
+options.test.test_batch_size = 32
 options.test.shuffle = False
 options.test.weighted_mean = False
 options.test.upsampled_chamfer_loss = False
@@ -197,6 +199,10 @@ def slugify(filename):
 def reset_options(options, args, phase='train'):
     if hasattr(args, "batch_size") and args.batch_size:
         options.train.batch_size = options.test.batch_size = args.batch_size
+    if hasattr(args, "train_batch_size") and args.train_batch_size:
+        options.train.batch_size = args.train_batch_size
+    if hasattr(args, "test_batch_size") and args.test_batch_size:
+        options.test.batch_size = args.test_batch_size
     if hasattr(args, "version") and args.version:
         options.version = args.version
     if hasattr(args, "num_epochs") and args.num_epochs:

@@ -21,6 +21,8 @@ def parse_args():
 
     # training
     parser.add_argument('--batch-size', help='batch size', type=int)
+    parser.add_argument('--train-batch-size', help='train_batch size', type=int)
+    parser.add_argument('--test-batch-size', help='test_batch size', type=int)
     parser.add_argument('--checkpoint', help='checkpoint file', type=str)
     parser.add_argument('--mvsnet-checkpoint', help='mvsnet checkpoint file', type=str)
     parser.add_argument('--num-epochs', help='number of epochs', type=int)
