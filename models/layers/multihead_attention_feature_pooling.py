@@ -7,10 +7,8 @@ from models.layers.multihead_attention import MultiheadAttention
 
 class MultiHeadAttentionFeaturePooling(nn.Module):
     def __init__(self, input_features_dim, output_features_dim,
-                 num_heads, use_stats_query,
-                 max_views=3, bias=True):
+                 num_heads, use_stats_query, bias=True):
         super(MultiHeadAttentionFeaturePooling, self).__init__()
-        self.max_views = max_views
         self.use_stats_query = use_stats_query
 
         self.attention = MultiheadAttention(
@@ -32,15 +30,6 @@ class MultiHeadAttentionFeaturePooling(nn.Module):
     #  @param features tensor of dimensions views x batch x features
     def forward(self, features):
         num_views, batch_size, num_input_features = features.size()
-        assert(num_views <= self.max_views)
-
-        # pad views to self.max_views
-        if num_views < self.max_views:
-            features = torch.cat((
-                features, torch.zeros_like(features[0:1])
-                               .repeat(self.max_views - num_views, 1, 1)
-            ), dim=0)
-
         flattened_features = features.view(-1, features.size(-1))
 
         # query

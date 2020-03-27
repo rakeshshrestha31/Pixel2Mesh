@@ -18,7 +18,8 @@ class ShapeNet(BaseDataset):
     Dataset wrapping images and target meshes for ShapeNet dataset.
     """
 
-    def __init__(self, file_root, file_list_name, mesh_pos, normalization, shapenet_options, intrinsics, is_train , nDepths=48):
+    def __init__(self, file_root, file_list_name, mesh_pos, normalization,
+                 shapenet_options, intrinsics, is_train, nDepths=48):
         super().__init__()
         self.file_root = file_root
         with open(os.path.join(self.file_root, "meta", "shapenet.json"), "r") as fp:
@@ -35,6 +36,7 @@ class ShapeNet(BaseDataset):
         self.is_train = is_train
         self.intrinsics = intrinsics
         self.nDepths = nDepths
+        self.options = shapenet_options
 
     def __getitem__(self, index):
         filename = self.file_names[index]
@@ -63,7 +65,7 @@ class ShapeNet(BaseDataset):
         proj_mat[0, 3, 3] = 1
         proj_mat[1, 2, 2] = 1
 
-        for idx, view in enumerate([0, 6, 7]):
+        for idx, view in enumerate(self.options.input_views):
             img_file = os.path.join(img_path, str(view).zfill(2) + '.png')
             img = self.read_image(img_file)
             img_normalized = self.normalize_img(img.clone()) \

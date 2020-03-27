@@ -239,9 +239,13 @@ class MVSNet(nn.Module):
         imgs = input_batch["images"]
         proj_matrices = input_batch["proj_matrices"]
         depth_values = input_batch["depth_values"]
+        num_views = imgs.size(1)
+
         if ("view_lists" not in input_batch) or not input_batch["view_lists"]:
             # all the views should be treated as ref_features iteratively
-            view_lists = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
+            view_lists = [np.roll(range(num_views), -i) for i in range(num_views)]
+            # for 3 views you'd expect this view_lists
+            # view_lists = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
         else:
             view_lists = input_batch["view_lists"]
 
@@ -304,7 +308,12 @@ class MVSNet(nn.Module):
                 volume_sq_sum += warped_volume.pow_(2)  # the memory of warped_volume has been modified
             del warped_volume
         # aggregate multiple feature volumes by variance
-        volume_variance = volume_sq_sum.div_(num_views).sub_(volume_sum.div_(num_views).pow_(2))
+        if num_views > 1:
+            volume_variance = \
+                    volume_sq_sum.div_(num_views) \
+                                 .sub_(volume_sum.div_(num_views).pow_(2))
+        else:
+            volume_variance = volume_sq_sum
 
         # step 3. cost volume regularization
         cost_agg = self.cost_regularization(volume_variance)

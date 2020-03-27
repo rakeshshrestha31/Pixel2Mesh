@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument('--version', help='version of task (timestamp by default)', type=str)
     parser.add_argument('--name', default='debug', type=str)
     parser.add_argument('--dataset', type=str)
-    parser.add_argument('--num_views', default=3, help='num_views', type=int)
+    parser.add_argument('--input-views', help='input_views', nargs='+', type=int)
     parser.add_argument('--seed', default=3, help='seed', type=int)
     parser.add_argument('--depth-loss-weight', help='depth loss weight', type=float)
     parser.add_argument('--depth-loss-type', help='depth loss type', type=str)

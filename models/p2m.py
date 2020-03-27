@@ -128,7 +128,7 @@ class P2MModel(nn.Module):
 
         self.attention_model = MultiHeadAttentionFeaturePooling(
             pre_fusion_features_dim, post_fusion_features_dim,
-            num_heads=self.options.num_attention_heads, max_views=3,
+            num_heads=self.options.num_attention_heads,
             use_stats_query=self.options.use_stats_query_attention
         )
         return features_dim

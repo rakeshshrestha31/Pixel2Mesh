@@ -34,6 +34,7 @@ class ShapeNetDepth(BaseDataset):
         self.normalization = normalization
         self.intrinsics = intrinsics
         self.nDepths = nDepths
+        self.options = shapenet_options
 
         self.len = len(self.file_names)
         if self.augment_ref_views:
@@ -60,7 +61,7 @@ class ShapeNetDepth(BaseDataset):
         proj_mat[0, 3, 3] = 1
         proj_mat[1, 2, 2] = 1
 
-        view_list = [0, 6, 7]
+        view_list = self.options.input_views
         view_list = self.shuffle_view_list(view_list, ref_view_idx)
         for idx, view in enumerate(view_list):
             img_file = os.path.join(img_path, str(view).zfill(2) + '.png')

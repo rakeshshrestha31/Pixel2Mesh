@@ -37,13 +37,13 @@ options.dataset.camera_c = [116.107317927,116.258975482]
 options.dataset.mesh_pos = [0., 0., -0.8]
 options.dataset.normalization = True
 options.dataset.num_classes = 13
-options.dataset.num_views = 1
 options.dataset.proj_matrix = None
 
 options.dataset.shapenet = edict()
 options.dataset.shapenet.num_points = 3000
 options.dataset.shapenet.resize_with_constant_border = False
-options.dataset.shapenet.augment_ref_views = True
+options.dataset.shapenet.augment_ref_views = False
+options.dataset.shapenet.input_views = [0, 6, 7]
 
 options.dataset.predict = edict()
 options.dataset.predict.folder = "./tmp"
@@ -213,8 +213,8 @@ def reset_options(options, args, phase='train'):
         options.train.shuffle = options.test.shuffle = True
     if hasattr(args, "backbone") and args.backbone:
         options.model.backbone = args.backbone
-    if hasattr(args, "num_views") and args.num_views:
-        options.dataset.num_views = args.num_views
+    if hasattr(args, "input_views") and args.input_views:
+        options.dataset.shapenet.input_views = args.input_views
     if hasattr(args, "only_depth_training") and args.only_depth_training is not None:
         options.loss.only_depth_training = args.only_depth_training
     if hasattr(args, "depth_loss_type") \
