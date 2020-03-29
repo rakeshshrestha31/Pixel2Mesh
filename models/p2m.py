@@ -237,15 +237,26 @@ class P2MModel(nn.Module):
             T_view_world = proj_mat[:, view_idx, 0]
             T_view_ref = torch.bmm(T_view_world, T_world_ref)
             pts_view = self.transform_points(pts, T_view_ref)
+
             # bound functions for easy features projection
             project_2d_features = functools.partial(
                 self.project_view_features, points=pts_view, view_idx=view_idx,
                 img_shape=img_shape, projection_functor=self.projection_2d
             )
             project_3d_features = functools.partial(
-                self.project_view_features, points=pts_view, view_idx=view_idx,
+                self.project_view_features, view_idx=view_idx,
                 img_shape=img_shape, projection_functor=projection_3d
             )
+
+            # predicted depth related precomputations
+            if self.options.use_costvolume_features \
+                    or self.options.use_backprojected_depth_as_feature \
+                    or self.options.use_predicted_depth_as_feature:
+                x_depth = project_2d_features(
+                    features=[depth.unsqueeze(2)], mode='nearest'
+                )
+                backprojected_points_view = \
+                        self.backproject_depth_points(pts_view, x_depth)
 
             proj_feats = []
             pts_coordinates.append(pts_view)
@@ -261,28 +272,21 @@ class P2MModel(nn.Module):
 
             # features from costvolume
             if self.options.use_costvolume_features:
-                x_costvolume_feats = \
-                        project_3d_features(features=costvolume_feats)
+                x_costvolume_feats = project_3d_features(
+                    features=costvolume_feats, points=backprojected_points_view
+                )
                 proj_feats.append(x_costvolume_feats)
 
-            # features from predicted/backprojected depth
-            if self.options.use_predicted_depth_as_feature \
-                    or self.options.use_backprojected_depth_as_feature:
-                x_depth = project_2d_features(
-                    features=[depth.unsqueeze(2)], mode='bilinear'
+            # features from predicted depth
+            if self.options.use_predicted_depth_as_feature:
+                proj_feats.append(x_depth)
+            # features from backprojected depth
+            if self.options.use_backprojected_depth_as_feature:
+                T_ref_view = torch.inverse(T_view_ref)
+                backprojected_points_ref = self.transform_points(
+                    backprojected_points_view, T_ref_view
                 )
-                # features from predicted depth
-                if self.options.use_predicted_depth_as_feature:
-                    proj_feats.append(x_depth)
-                # features from backprojected depth
-                if self.options.use_backprojected_depth_as_feature:
-                    backprojected_points_view = \
-                            self.backproject_depth_points(pts_view, x_depth)
-                    T_ref_view = torch.inverse(T_view_ref)
-                    backprojected_points_ref = self.transform_points(
-                        backprojected_points_view, T_ref_view
-                    )
-                    proj_feats.append(backprojected_points_ref)
+                proj_feats.append(backprojected_points_ref)
             transformed_features.append(torch.cat(proj_feats, dim=-1))
         return self.fuse_features(pts_coordinates, transformed_features)
 
@@ -291,8 +295,8 @@ class P2MModel(nn.Module):
     #  @param depths depths of each point batch x num_points x 1
     @staticmethod
     def backproject_depth_points(points, depths):
-        backprojected_points = points / points[:, :, -1].unsqueeze(-1)
-        backprojected_points *= depths.expand(-1, -1, 3)
+        backprojected_points = points / (points[:, :, -1].unsqueeze(-1) + 1e-7)
+        backprojected_points *= (depths + 1e-7).expand(-1, -1, 3)
         # the points are in East-Up-South convention, but depths are in East-Down-North
         # hence z of the points are negative, so negate them again
         backprojected_points *= -1
