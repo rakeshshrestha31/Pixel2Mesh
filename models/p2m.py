@@ -52,7 +52,7 @@ class P2MModel(nn.Module):
                 (self.rgb_vgg.features_dim if options.use_rgb_features else 0) \
                 + (self.depth_vgg.features_dim if options.use_depth_features \
                         else 0) \
-                + (self.mvsnet.features_dim \
+                + ((self.mvsnet.features_dim * 2) \
                     if options.use_costvolume_features else 0) \
                 + (1 if options.use_predicted_depth_as_feature else 0) \
                 + (3 if options.use_backprojected_depth_as_feature else 0)
@@ -272,10 +272,16 @@ class P2MModel(nn.Module):
 
             # features from costvolume
             if self.options.use_costvolume_features:
-                x_costvolume_feats = project_3d_features(
+                # project both original coords and backprojected coords
+                # to the 3D feats
+                x_costvolume_feats_orig = project_3d_features(
+                    features=costvolume_feats, points=pts_view
+                )
+                x_costvolume_feats_backproj = project_3d_features(
                     features=costvolume_feats, points=backprojected_points_view
                 )
-                proj_feats.append(x_costvolume_feats)
+                proj_feats.append(x_costvolume_feats_orig)
+                proj_feats.append(x_costvolume_feats_backproj)
 
             # features from predicted depth
             if self.options.use_predicted_depth_as_feature:
