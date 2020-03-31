@@ -34,6 +34,13 @@ class MeshRenderer(object):
                        'light_yellow': np.array([213., 216., 165.]) / 255,
                        }
         self.camera_f, self.camera_c, self.mesh_pos = camera_f, camera_c, mesh_pos
+        self.camera_k = np.array([[self.camera_f[0], 0, self.camera_c[0]],
+                                  [0, self.camera_f[1], self.camera_c[1]],
+                                  [0, 0, 1]])
+        # inverse y and z, equivalent to inverse x, but gives positive z
+        self.rvec = np.array([np.pi, 0., 0.], dtype=np.float32)
+        self.tvec = np.zeros(3, dtype=np.float32)
+        self.dist_coeffs = np.zeros(5, dtype=np.float32)
         self.renderer = nr.Renderer(camera_mode='projection',
                                     light_intensity_directional=.8,
                                     light_intensity_ambient=.3,
@@ -141,49 +148,64 @@ class MeshRenderer(object):
     def make_points_unhomogeneous(pts):
         return pts[:, :3]
 
-    ##
-    #  @param extrinsics numpy array of size views x 4 x 4
-    def visualize_reconstruction(self, gt_coord, coord, faces, images,
-                                 pred_depths, gt_depths, rendered_depth, masks,
-                                 view_weights, extrinsics,
-                                 mesh_only=False, **kwargs):
-        camera_k = np.array([[self.camera_f[0], 0, self.camera_c[0]],
-                             [0, self.camera_f[1], self.camera_c[1]],
-                             [0, 0, 1]])
-        # inverse y and z, equivalent to inverse x, but gives positive z
-        rvec = np.array([np.pi, 0., 0.], dtype=np.float32)
-        tvec = np.zeros(3, dtype=np.float32)
-        dist_coeffs = np.zeros(5, dtype=np.float32)
-        mesh, _ = self._render_mesh(coord, faces, images[0].shape[2], images[0].shape[1],
-                                    camera_k, dist_coeffs, rvec, tvec, **kwargs)
-        if mesh_only:
-            return mesh
-
+    ## renders gt and predicted points with view weights
+    def render_weighted_pointclouds(self, gt_coord, coord,
+                                    extrinsics, view_weights, img_shape,
+                                    **kwargs):
         T_ref_world = extrinsics[0]
         T_world_ref = np.linalg.inv(T_ref_world)
-        num_views = len(pred_depths)
+        num_views = extrinsics.shape[0]
         gt_pcs = [None for _ in range(num_views)]
         pred_pcs = [None for _ in range(num_views)]
+
+        # show only the view with maximum weight
+        max_indices = np.argmax(view_weights, axis=-1)
+        # one hot encoded indices
+        one_hot = np.eye(view_weights.shape[1])[max_indices]
+        max_view_weights = view_weights * one_hot
+
         for view_idx in range(num_views):
             T_view_world = extrinsics[view_idx]
             T_view_ref = np.dot(T_view_world, T_world_ref)
             gt_coord_view = self.transform_points(T_view_ref, gt_coord)
             pred_coord_view = self.transform_points(T_view_ref, coord)
+
+            # dummy weights for ground truth corresponding to view idx
             dummy_view_weights = np.zeros(
                 (gt_coord.shape[0], num_views), dtype=np.float64
             )
             dummy_view_weights[:, view_idx] = 1.0
 
             gt_pcs[view_idx], _ = self._render_pointcloud(
-                gt_coord_view, images[0].shape[2], images[0].shape[1],
-                camera_k, dist_coeffs, rvec, tvec, dummy_view_weights,
-                **kwargs
+                gt_coord_view, img_shape[2], img_shape[1],
+                self.camera_k, self.dist_coeffs, self.rvec, self.tvec,
+                dummy_view_weights, **kwargs
             )
+
             pred_pcs[view_idx], _ = self._render_pointcloud(
-                pred_coord_view, images[0].shape[2], images[0].shape[1],
-                camera_k, dist_coeffs, rvec, tvec, view_weights,
-                **kwargs
+                pred_coord_view, img_shape[2], img_shape[1],
+                self.camera_k, self.dist_coeffs, self.rvec, self.tvec,
+                max_view_weights, **kwargs
             )
+        return gt_pcs, pred_pcs
+
+    ##
+    #  @param extrinsics numpy array of size views x 4 x 4
+    def visualize_reconstruction(self, gt_coord, coord, faces, images,
+                                 pred_depths, gt_depths, rendered_depth, masks,
+                                 view_weights, extrinsics,
+                                 mesh_only=False, **kwargs):
+        mesh, _ = self._render_mesh(
+            coord, faces, images[0].shape[2], images[0].shape[1],
+            self.camera_k, self.dist_coeffs, self.rvec, self.tvec, **kwargs
+        )
+        if mesh_only:
+            return mesh
+
+        gt_pcs, pred_pcs = self.render_weighted_pointclouds(
+            gt_coord, coord, extrinsics, view_weights, images[0].shape
+        )
+
         # get all views from the depths
         pred_depths = [self._1to3channel(i) for i in pred_depths]
         gt_depths = [self._1to3channel(i) for i in gt_depths]
