@@ -9,7 +9,8 @@ class BaseDataset(Dataset):
     def __init__(self):
         self.normalize_img = Normalize(mean=config.IMG_NORM_MEAN, std=config.IMG_NORM_STD)
 
-    def cameraMat(self, param):
+    @staticmethod
+    def cameraMat(param):
         theta = param[0] * np.pi / 180.0
         camy = param[3] * np.sin(param[1] * np.pi / 180.0)
         lens = param[3] * np.cos(param[1] * np.pi / 180.0)
@@ -20,10 +21,13 @@ class BaseDataset(Dataset):
         z = camy * np.sin(theta + np.pi)
         Y = np.stack([x, lens, z])
         X = np.cross(Y, Z)
-        cm_mat = np.stack([self.normal(X), self.normal(Y), self.normal(Z)])
+        cm_mat = np.stack([
+            BaseDataset.normal(X), BaseDataset.normal(Y), BaseDataset.normal(Z)
+        ])
         return cm_mat, Z
 
-    def normal(self, v):
+    @staticmethod
+    def normal(v):
         norm = np.linalg.norm(v)
         if norm == 0:
             return v
