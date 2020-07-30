@@ -1,0 +1,43 @@
+<scene version="0.5.0">
+    <shape type="obj">
+        <string name="filename" value="{obj_file}" />
+        <float name="maxSmoothAngle" value="60" />
+    </shape>
+
+    <emitter id="env" type="constant">
+    </emitter>
+
+    <integrator type="multichannel">
+        <integrator type="path" />
+
+        <integrator type="field">
+            <string name="field" value="shNormal" />
+            <vector name="origin" x="{origin_x}" y="{origin_y}" z="{origin_z}" />
+        </integrator>
+
+        <integrator type="field">
+            <string name="field" value="distance" />
+            <float name="dist" value="1" />
+        </integrator>
+    </integrator>
+
+    <sensor type="perspective">
+        <transform name="toWorld">
+            <matrix value="{transformation_world_cam}" />
+        </transform>
+
+        <sampler type="halton">
+            <integer name="sampleCount" value="64" />
+        </sampler>
+
+        <string name="fovAxis" value="{fov}" />
+
+        <film type="hdrfilm">
+            <integer name="width" value="{img_width}" />
+            <integer name="height" value="{img_height}" />
+            <string name="pixelFormat" value="rgb, rgb, rgb" />
+            <string name="channelNames" value="color, normal, depth" />
+            <boolean name="banner" value="false" />
+        </film>
+    </sensor>
+</scene>
