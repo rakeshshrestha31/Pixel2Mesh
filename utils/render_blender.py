@@ -188,12 +188,17 @@ def render_object(obj_category, args, return_depths):
         remove_mesh_file(normal_mesh_file)
         remove_mesh_file(scaled_mesh_file)
 
-    # find mesh with normal
-    subprocess.run([
+    meshlabserver_command = [
         'meshlabserver', '-i', original_mesh_file, '-o', normal_mesh_file,
         # options to select properties to save
-        '-m', 'vn'
-    ]) # , stdout=subprocess.DEVNULL)
+        '-om', 'vn'
+    ]
+    print('running :', ' '.join(meshlabserver_command))
+
+    # find mesh with normal
+    subprocess.run(meshlabserver_command) # , stdout=subprocess.DEVNULL)
+
+    print('done meshlab')
 
     if not os.path.isfile(normal_mesh_file):
         print('[Error] Unable to generate mesh with normal', normal_mesh_file)
@@ -220,10 +225,12 @@ def render_object(obj_category, args, return_depths):
 
     write_rendering_params(rendering_params_file, rendering_metadata, depth_dir)
     print('writing', depth_dir)
-    subprocess.run([
+    xms_command = [
         args.xms_exec,
         scaled_mesh_file, rendering_params_file
-    ], cwd=os.path.dirname(args.xms_exec)) # , stdout=subprocess.DEVNULL)
+    ]
+    print('xms command:', ' '.join(xms_command))
+    subprocess.run(xms_command) # , stdout=subprocess.DEVNULL)
 
     if return_depths:
         depths = []
@@ -240,8 +247,8 @@ def render_object(obj_category, args, return_depths):
         depths = None
 
     os.remove(rendering_params_file)
-    remove_mesh_file(normal_mesh_file)
     remove_mesh_file(scaled_mesh_file)
+    remove_mesh_file(normal_mesh_file)
     return depths
 
 # multi-processing stuffs
@@ -269,9 +276,14 @@ if __name__ == '__main__':
             if os.path.isdir(os.path.join(args.shapenet_dir, obj, category))
         )
 
-    with mp.Pool(NCORE) as p:
-        p.map(functools.partial(render_object, args=args, return_depths=False),
-              shapenet_objects_categories)
+    if NCORE >= 2:
+        with mp.Pool(NCORE) as p:
+            p.map(functools.partial(render_object, args=args, return_depths=False),
+                  shapenet_objects_categories)
+    else:
+        for i in shapenet_objects_categories:
+            print(i)
+            render_object(i, args=args, return_depths=False)
 
     # for i in shapenet_objects_categories:
     #     render_object(i, args=args, return_depths=False)
