@@ -30,12 +30,12 @@
             <integer name="sampleCount" value="64" />
         </sampler>
 
-        <string name="fovAxis" value="{fov}" />
+        <float name="fov" value="{fov}" />
 
         <film type="hdrfilm">
             <integer name="width" value="{img_width}" />
             <integer name="height" value="{img_height}" />
-            <string name="pixelFormat" value="rgb, rgb, rgb" />
+            <string name="pixelFormat" value="rgba, rgb, luminance" />
             <string name="channelNames" value="color, normal, depth" />
             <boolean name="banner" value="false" />
         </film>

@@ -1,0 +1,6 @@
+OpenEXR
+imath
+scikit-learn
+trimesh
+open3d==0.9
+opencv-python

@@ -2,6 +2,8 @@ import argparse, sys, os
 import subprocess
 import pickle
 import cv2
+import OpenEXR
+import Imath
 import numpy as np
 import open3d as o3d
 import sklearn.preprocessing
@@ -26,7 +28,7 @@ def parse_args():
 
 P2M_SCALE_FACTOR = 0.57
 P2M_FOCAL_LENGTH = 250
-P2M_FOV = 25
+P2M_FOV = 50
 P2M_IMG_SIZE = (224, 224)
 P2M_PRINCIPAL_POINT = (112, 112)
 P2M_MIN_POINT_DEPTH = 0.1
@@ -106,10 +108,91 @@ def original_obj_transform(obj_path, view_path):
         break
 
 def transformation_mat(R, t):
+    """T_world_cam (cam to world) from extrinsics"""
     T = np.eye(4, 4)
     T[:3, :3] = R
     T[:3, 3] = -np.matmul(R, t)
+    T = np.linalg.inv(T)
+    # Mitsuba's z-axis should point towards the object
+    # Unlike OpenGL's which points away
+    T[:, 0] *= -1
+    T[:, 2] *= -1
     return T
+
+def get_global_camera_frustum():
+    camera_size = 0.1
+    w = camera_size
+    h = w * 0.75
+    z = w * 0.6
+    cam_frustum_mesh = {
+        'vertices': np.array([
+            [0, 0, 0],
+            [w, h, z],
+            [-w, h, z],
+            [-w, -h, z],
+            [w, -h, z]
+        ]),
+        'faces': np.array([
+            [0, 1, 2],
+            [0, 2, 3],
+            [0, 3, 4],
+            [0, 1, 4],
+            [1, 2, 3],
+            [3, 4, 1]
+        ], dtype=np.uint64)
+    }
+    return cam_frustum_mesh
+
+##
+#  @param points array nx3
+#  @return array nx4
+def make_homogeneous_array(points: np.ndarray):
+    return np.concatenate(
+        (points, np.ones((points.shape[0], 1), dtype=points.dtype)), axis=1
+    )
+
+##
+#  @param points tensor nx4
+#  @return tensor nx3
+def unmake_homogeneous(points):
+    return points[:, :3]
+
+## adapted from https://github.com/raulmur/ORB_SLAM2/blob/
+#               f2e6f51cdc8d067655d90a78c06261378e07e8f3/src/MapDrawer.cc
+def draw_cameras(T_world_cams, filename):
+    colors = np.asarray(
+        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+    )
+    global_cam_frustum = get_global_camera_frustum()
+
+    # compute vertices in global frame
+    cam_frustum_vertices = [
+        unmake_homogeneous(
+            np.matmul(make_homogeneous_array(global_cam_frustum['vertices']),
+                      T.transpose())
+        )
+        for T in T_world_cams
+    ]
+
+    # compute faces offsetted by right amount
+    vertices_len = np.cumsum([i.shape[0] for i in cam_frustum_vertices])
+    vertices_offset = np.zeros(vertices_len.shape)
+    vertices_offset[1:] = vertices_len[0:-1]
+    cam_frustum_faces = [
+        global_cam_frustum['faces'] + offset
+        for offset in vertices_offset
+    ]
+
+    cam_frustum_vertices = np.concatenate(cam_frustum_vertices, axis=0)
+    cam_frustum_faces = np.concatenate(cam_frustum_faces, axis=0)
+
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(cam_frustum_vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(cam_frustum_faces)
+
+    o3d.io.write_triangle_mesh(
+        filename, mesh, write_ascii=True
+    )
 
 def remove_mesh_file(mesh_filename):
     os.remove(mesh_filename)
@@ -142,6 +225,39 @@ def write_rendering_params(rendering_params_files, rendering_metadata,
         )
         with open(rendering_params_files[view_idx], 'w') as f:
             f.write(mitsuba_xml)
+        # visualize camera frustum
+        # draw_cameras(
+        #     [extrinsics_mat],
+        #     '{}_{}.ply'.format(os.path.splitext(obj_file)[0], view_idx)
+        # )
+        # print('extrinsics mat\n', extrinsics_mat)
+
+def parse_exr(exr_file):
+    exr_obj = OpenEXR.InputFile(exr_file)
+    header = exr_obj.header()
+    dw = header['dataWindow']
+    size = (dw.max.y - dw.min.y + 1, dw.max.x - dw.min.x + 1)
+    pixel_type = Imath.PixelType(Imath.PixelType.FLOAT)
+    exr_data = {
+        channel: np.fromstring(
+            exr_obj.channel(channel, pixel_type), dtype=np.float32
+        ).reshape(size)
+        for channel in header['channels'].keys()
+    }
+    print({
+        key: (np.min(value), np.max(value))
+        for key, value in exr_data.items()}
+    )
+
+    depth_img = exr_data['depth.Y']
+    normal_img = np.stack(
+        [exr_data[i] for i in ['normal.B', 'normal.G', 'normal.R']],
+        axis=-1
+    )
+    silhouette = depth_img > 1e-3
+    # [-1, 1] to [0, 1] and mask
+    normal_img = (normal_img * 0.5 + 0.5) * np.expand_dims(silhouette, -1)
+    return depth_img, normal_img
 
 def render_object(obj_category, args, return_depths):
     obj, category = obj_category
@@ -162,7 +278,10 @@ def render_object(obj_category, args, return_depths):
 
     depth_dir = '{}/{}/{}/rendering_depth' \
                     .format(args.rendering_dir, obj, category)
+    normal_dir = '{}/{}/{}/rendering_normal' \
+                    .format(args.rendering_dir, obj, category)
     os.makedirs(depth_dir, exist_ok=True)
+    os.makedirs(normal_dir, exist_ok=True)
 
     # if len(os.listdir(depth_dir)):
     #     return
@@ -229,12 +348,44 @@ def render_object(obj_category, args, return_depths):
         return
 
     for view_idx, param_file in enumerate(rendering_params_files):
+        exr_file = '/tmp/{}_{}_{:02}.exr'.format(obj, category, view_idx)
         xms_command = [
-            'mitsuba',
-            param_file, '-o', os.path.join(depth_dir, '%d.exr' % view_idx)
+            'mitsuba', param_file, '-o', exr_file
         ]
         print('xms command:', ' '.join(xms_command))
         subprocess.run(xms_command) # , stdout=subprocess.DEVNULL)
+        if os.path.isfile(exr_file) and OpenEXR.isOpenExrFile(exr_file):
+            depth_img, normal_img = parse_exr(exr_file)
+
+            # debug
+            # original_color_img = cv2.imread(
+            #     '{}/{}/{}/rendering/{:02}.png'
+            #         .format(args.rendering_dir, obj, category, view_idx),
+            #     cv2.IMREAD_UNCHANGED
+            # )
+            # original_color_img = cv2.resize(original_color_img, depth_img.shape[:2])
+            # original_silhouette = original_color_img[:, :, -1].astype(np.bool)
+            # silhouette = depth_img > 1e-3
+            # iou = np.sum(original_silhouette & silhouette) \
+            #         / np.sum(original_silhouette | silhouette)
+            # print('iou', iou)
+            # print(original_color_img.shape, original_color_img.dtype)
+            # cv2.imshow('original_color_img', original_color_img[:, :, :3])
+            # cv2.imshow('depth', depth_img)
+            # cv2.imshow('normal', normal_img)
+            # cv2.waitKey(0)
+
+            depth_img = (depth_img * 1000).astype(np.uint16)
+            depth_file = os.path.join(depth_dir, '{:02}.png'.format(view_idx))
+            cv2.imwrite(depth_file, depth_img)
+
+            normal_img = (normal_img * 255).astype(np.uint8)
+            normal_file = os.path.join(normal_dir, '{:02}.png'.format(view_idx))
+            cv2.imwrite(normal_file, normal_img)
+
+            os.remove(exr_file)
+        else:
+            print('[ERROR]: exr_file {} not created/invalid'.format(exr_file))
 
     if return_depths:
         depths = []
