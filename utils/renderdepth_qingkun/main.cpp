@@ -27,7 +27,7 @@ vector<Eigen::Matrix<double, 3, 4>> extrinsic_list;
 vector<std::string> out_names;
 double min_distance, max_distance;
 double depth_unit;
-int currentView = 0;
+// int currentView = 0;
 
 
 //vec3 centerPos(0.0, 0.0, 0.0);
@@ -36,13 +36,13 @@ int currentView = 0;
 //string txtPath;
 //vector<vec3> camPosList;
 
-void display()
+void display(int currentView)
 {
 	if (currentView >= extrinsic_list.size()) exit(0);
 	int w = glutGet(GLUT_WINDOW_WIDTH);
 	int h = glutGet(GLUT_WINDOW_HEIGHT);
 
-    // glClearDepth(0.0f);
+  // glClearDepth(0.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	double ar = w / static_cast< double >(h);
@@ -93,10 +93,10 @@ void display()
 	{
 		for (int j = 0; j < depth_image.cols; j++)
 		{
-            float depth_val = depth[i*depth_image.cols + j];
-			depth_val = (2.0 * min_distance * max_distance) / (max_distance + min_distance - (2.0f * depth_val - 1) * (max_distance - min_distance));
+            float depth_val_raw = depth[i*depth_image.cols + j];
+			float depth_val = (2.0 * min_distance * max_distance) / (max_distance + min_distance - (2.0f * depth_val_raw - 1) * (max_distance - min_distance));
 //			depth[i*depth_image.cols + j] = (depth[i*depth_image.cols + j] - min_distance) / (max_distance - min_distance);
-            if (depth_val > min_distance && depth_val < max_distance)
+            if (depth_val > min_distance && depth_val < max_distance && depth_val_raw > 0 && depth_val_raw < 1)
                 depth_image.at<u_int16_t>(i, j) = std::round(depth_val * depth_unit);
             else
                 depth_image.at<u_int16_t>(i, j)  = 0;
@@ -155,12 +155,20 @@ int main(int argc,char **argv)
 
 
 	glutCreateWindow("GLUT");
+  glutHideWindow();
 
 	glewInit();
-
-	glutDisplayFunc(display);
-	glutTimerFunc(0, timer, 0);
 	glEnable(GL_DEPTH_TEST);
-	glutMainLoop();
+
+
+  for (int i = 0; i < extrinsic_list.size(); i++)
+  {
+      display(i);
+  }
+  return 0;
+
+	// glutDisplayFunc(display);
+	// glutTimerFunc(0, timer, 0);
+	// glEnable(GL_DEPTH_TEST);
 	return 0;
 }

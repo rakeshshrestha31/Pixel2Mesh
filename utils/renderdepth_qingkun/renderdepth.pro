@@ -16,10 +16,9 @@ INCLUDEPATH += /usr/include \
 
 LIBS += $$PWD/trimesh2/lib.Linux64/libtrimesh.a
 LIBS += -lglut -lGLU -lGL -lGLEW
-LIBS += /usr/lib/libopencv_highgui.so \
-        /usr/lib/libopencv_core.so \
-        /usr/lib/libopencv_imgcodecs.so \
-        /usr/lib/libopencv_imgproc.so \
-        /usr/lib/libopencv_photo.so \
+LIBS += /usr/lib/x86_64-linux-gnu/libopencv_highgui.so \
+        /usr/lib/x86_64-linux-gnu/libopencv_core.so \
+        /usr/lib/x86_64-linux-gnu/libopencv_imgproc.so \
+        /usr/lib/x86_64-linux-gnu/libopencv_photo.so \
 
 LIBS += -fopenmp
