@@ -26,6 +26,19 @@ if __name__ == '__main__':
     with open(args.results2_log, 'r') as f:
         results2 = process_results(json.load(f))
 
+    # find keys occurring in both
+    common_keys = set(results1.keys()).intersection(results2.keys())
+    # dict for fast lookup
+    common_keys = {i: None for i in common_keys}
+
+    # filter only common keys
+    results1 = {
+        key: value for key, value in results1.items() if key in common_keys
+    }
+    results2 = {
+        key: value for key, value in results2.items() if key in common_keys
+    }
+
     tau_idx = 1
     results_diff = {
         key: {
